@@ -8,5 +8,5 @@
       "onAutoForward": "openBrowser"
     }
   },
-  "postCreateCommand": "npm install && npm run build"
+  "postCreateCommand": "npm install && npm rebuild better-sqlite3 && npm run build"
 }
