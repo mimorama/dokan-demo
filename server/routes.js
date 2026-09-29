@@ -259,6 +259,29 @@ router.post('/categories', (req, res) => {
   }
 });
 
+router.put('/categories/:id', (req, res) => {
+  try {
+    const { name, icon, description } = req.body;
+    db.prepare('UPDATE categories SET name = ?, icon = ?, description = ? WHERE id = ?').run(name, icon || 'Package', description || '', req.params.id);
+    res.json({ success: true, id: req.params.id, name, icon, description });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/categories/:id', (req, res) => {
+  try {
+    const pCount = db.prepare('SELECT COUNT(*) as count FROM products WHERE category_id = ?').get(req.params.id).count;
+    if (pCount > 0) {
+      return res.status(400).json({ error: `لا يمكن حذف هذا التصنيف لوجود ${pCount} أجهزة مسجلة تابعة له` });
+    }
+    db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/brands', (req, res) => {
   try {
     const rows = db.prepare(`

@@ -45,6 +45,8 @@ export const api = {
   // Categories & Brands
   getCategories: () => fetchApi('/categories'),
   createCategory: (data) => fetchApi('/categories', { method: 'POST', body: JSON.stringify(data) }),
+  updateCategory: (id, data) => fetchApi(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCategory: (id) => fetchApi(`/categories/${id}`, { method: 'DELETE' }),
   getBrands: () => fetchApi('/brands'),
   createBrand: (data) => fetchApi('/brands', { method: 'POST', body: JSON.stringify(data) }),
 

@@ -15,7 +15,8 @@ import {
   Building2,
   Tags,
   CheckSquare,
-  Square
+  Square,
+  FolderPlus
 } from 'lucide-react';
 import { api } from '../api';
 import BarcodeLabelModal from '../components/BarcodeLabelModal';
@@ -33,9 +34,17 @@ export default function Products({ settings }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSerialModal, setShowSerialModal] = useState(false);
   const [showBrandModal, setShowBrandModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [suppliersList, setSuppliersList] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [barcodeProduct, setBarcodeProduct] = useState(null);
+
+  // Form State for Category
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    icon: 'Package'
+  });
 
   // Form State for Brand with Multi-supplier link
   const [brandForm, setBrandForm] = useState({
@@ -241,6 +250,38 @@ export default function Products({ settings }) {
     }
   };
 
+  const handleOpenAddCategoryModal = () => {
+    setCategoryForm({
+      name: '',
+      description: '',
+      icon: 'Package'
+    });
+    setShowCategoryModal(true);
+  };
+
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+    if (!categoryForm.name.trim()) {
+      alert('اسم التصنيف / الصنف مطلوب');
+      return;
+    }
+    try {
+      const newCat = await api.createCategory({
+        name: categoryForm.name.trim(),
+        description: categoryForm.description.trim(),
+        icon: categoryForm.icon || 'Package'
+      });
+      setShowCategoryModal(false);
+      const updatedCategories = await api.getCategories();
+      setCategories(updatedCategories);
+      if (showAddModal) {
+        setFormData(prev => ({ ...prev, category_id: newCat.id }));
+      }
+    } catch (err) {
+      alert(err.message || 'خطأ أثناء إضافة التصنيف');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header & Quick Actions */}
@@ -256,6 +297,15 @@ export default function Products({ settings }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={handleOpenAddCategoryModal}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+          >
+            <FolderPlus className="w-4 h-4 text-indigo-200" />
+            <span>إضافة تصنيف جديد</span>
+          </button>
+
           <button
             type="button"
             onClick={handleOpenAddBrandModal}
@@ -461,8 +511,18 @@ export default function Products({ settings }) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-600 font-bold mb-1">التصنيف</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-600 font-bold">التصنيف *</label>
+                    <button
+                      type="button"
+                      onClick={handleOpenAddCategoryModal}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                    >
+                      + تصنيف جديد
+                    </button>
+                  </div>
                   <select
+                    required
                     value={formData.category_id}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-semibold text-slate-700"
@@ -784,6 +844,83 @@ export default function Products({ settings }) {
                 >
                   <Check className="w-4 h-4" />
                   <span>حفظ الماركة الآن</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Category Modal */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-xs text-slate-800">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                <FolderPlus className="w-5 h-5 text-indigo-600" />
+                إضافة تصنيف / صنف رئيسي جديد
+              </h3>
+              <button onClick={() => setShowCategoryModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCategory} className="space-y-4">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1.5">اسم التصنيف / الصنف *</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="مثال: سخانات مياه، ديب فريزر، مكانس، أجهزة مطبخ..."
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Quick Preset Badges */}
+              <div>
+                <label className="block text-[11px] text-slate-500 font-semibold mb-1.5">اقتراحات سريعة شائعة للأجهزة:</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['سخانات مياه', 'دفايات وتدفئة', 'مكانس ومغاسل', 'فلاتر ومبردات مياه', 'ميكروويف وأفران', 'قلايات هوائية', 'خلاطات ومحضرات طعام'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCategoryForm({ ...categoryForm, name: preset })}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-600 transition-all cursor-pointer"
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-bold mb-1.5">وصف التصنيف (اختياري)</label>
+                <textarea
+                  rows={2}
+                  placeholder="وصف إضافي للأجهزة التابعة لهذا التصنيف..."
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryModal(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>حفظ التصنيف الآن</span>
                 </button>
               </div>
             </form>
