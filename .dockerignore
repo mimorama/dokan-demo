@@ -1,0 +1,10 @@
+node_modules
+client/node_modules
+client/dist
+backups
+Dokan_Release_*
+*.zip
+dokan.db-wal
+dokan.db-shm
+.git
+.env
