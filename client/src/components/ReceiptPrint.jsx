@@ -34,8 +34,8 @@ export default function ReceiptPrint({ receiptData, settings, onClose }) {
         </div>
 
         {/* Voucher Content */}
-        <div className="p-6 bg-slate-50 flex justify-center">
-          <div id="printable-area" className="w-[100mm] bg-white p-6 rounded-lg border border-slate-300 shadow-sm text-xs text-slate-800">
+        <div className="p-6 bg-slate-50 flex justify-center print:p-0 print:bg-white">
+          <div id="printable-area" className="w-[100mm] max-w-[100mm] bg-white p-6 rounded-lg border border-slate-300 shadow-sm text-xs text-slate-800 print:border-none print:shadow-none print:p-4 print:mx-auto">
             <div className="text-center border-b border-slate-300 pb-3 mb-3">
               <img
                 src={settings?.logo_url || '/logo.svg'}
@@ -57,7 +57,7 @@ export default function ReceiptPrint({ receiptData, settings, onClose }) {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">التاريخ:</span>
-                <span>{new Date().toLocaleDateString('ar-EG')}</span>
+                <span>{new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">اسم العميل:</span>

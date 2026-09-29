@@ -1263,12 +1263,32 @@ export default function Branches({ settings, currentUser }) {
       )}
 
       {/* ============================================================ */}
-      {/* MODAL: VIEW TRANSFER DETAILS                                 */}
+      {/* MODAL: VIEW TRANSFER DETAILS & OFFICIAL PRINTING              */}
       {/* ============================================================ */}
       {viewTransferModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 text-xs text-slate-800 flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+          <div id="printable-area" className="printable-area bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 text-xs text-slate-800 flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:border-none print:p-0">
+            {/* Formal Printable Document Header (shown ONLY during print) */}
+            <div className="hidden print:block border-b-2 border-slate-900 pb-3 mb-4 text-right">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">{settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية'}</h2>
+                  <p className="text-[10px] text-slate-500 font-bold">{settings?.tagline || 'تجارة وتوزيع الأجهزة الكهربائية والمنزلية'}</p>
+                  <p className="text-[9px] text-slate-400">س.ت: {settings?.commercial_reg || '123456'} | هاتف: {settings?.phone || '01023456789'}</p>
+                </div>
+                <div className="text-left font-mono text-[10px] space-y-0.5" dir="ltr">
+                  <p>Transfer No: <strong className="text-xs text-blue-900">{viewTransferModal.transfer_no}</strong></p>
+                  <p>Date: {viewTransferModal.transfer_date}</p>
+                  <p>Staff: {viewTransferModal.created_by}</p>
+                </div>
+              </div>
+              <div className="text-center py-1.5 bg-slate-100 border border-slate-300 rounded font-black text-sm text-slate-900">
+                إذن تحويل بضائع وأجهزة بين المخازن (مستند نقل ومطابقة رسمي)
+              </div>
+            </div>
+
+            {/* Screen Header (hidden on print) */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4 no-print">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
                   <ArrowLeftRight className="w-4 h-4" />
@@ -1285,8 +1305,8 @@ export default function Branches({ settings, currentUser }) {
               </button>
             </div>
 
-            <div className="space-y-4 flex-1 overflow-y-auto pr-1">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs">
+            <div className="space-y-4 flex-1 overflow-y-auto pr-1 print:overflow-visible print:pr-0">
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs print:bg-white print:border-slate-300">
                 <div>
                   <span className="text-slate-500 block text-[11px]">من المخزن:</span>
                   <span className="font-extrabold text-slate-900">{viewTransferModal.from_warehouse_name}</span>
@@ -1322,25 +1342,25 @@ export default function Branches({ settings, currentUser }) {
                 <h4 className="font-extrabold text-slate-800 mb-2 flex items-center justify-between">
                   <span>الأجهزة والقطع المشمولة بالإذن ({viewTransferModal.items?.length || viewTransferModal.total_items} جهاز):</span>
                 </h4>
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="border border-slate-200 rounded-xl overflow-hidden print:border-slate-300">
                   <table className="w-full text-right text-xs">
-                    <thead className="bg-slate-100 text-slate-600 font-bold">
+                    <thead className="bg-slate-100 text-slate-600 font-bold print:bg-slate-200 print:text-black">
                       <tr>
-                        <th className="p-2 w-8 text-center">#</th>
-                        <th className="p-2">الجهاز والموديل</th>
-                        <th className="p-2">السيريال نمبر</th>
+                        <th className="p-2 w-8 text-center border-b border-slate-200">#</th>
+                        <th className="p-2 border-b border-slate-200">الجهاز والموديل</th>
+                        <th className="p-2 border-b border-slate-200">السيريال نمبر</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 print:divide-slate-200">
                       {viewTransferModal.items && viewTransferModal.items.length > 0 ? (
                         viewTransferModal.items.map((it, idx) => (
                           <tr key={idx} className="hover:bg-slate-50">
-                            <td className="p-2 text-center font-bold text-slate-400">{idx + 1}</td>
-                            <td className="p-2 font-bold text-slate-800">
+                            <td className="p-2 text-center font-bold text-slate-400 print:text-black">{idx + 1}</td>
+                            <td className="p-2 font-bold text-slate-800 print:text-black">
                               {it.product_name}
-                              {it.model_number && <span className="block text-[10px] text-slate-400 font-mono font-normal">موديل: {it.model_number}</span>}
+                              {it.model_number && <span className="block text-[10px] text-slate-400 font-mono font-normal print:text-slate-600">موديل: {it.model_number}</span>}
                             </td>
-                            <td className="p-2 font-mono font-bold text-blue-700" dir="ltr">
+                            <td className="p-2 font-mono font-bold text-blue-700 print:text-black" dir="ltr">
                               {it.serial_number || 'بدون سيريال'}
                             </td>
                           </tr>
@@ -1356,9 +1376,33 @@ export default function Branches({ settings, currentUser }) {
                   </table>
                 </div>
               </div>
+
+              {/* Formal Signatures and Confirmation (shown ONLY during print) */}
+              <div className="hidden print:grid grid-cols-4 gap-3 pt-6 mt-6 border-t-2 border-slate-800 text-center text-[10px]">
+                <div className="space-y-6">
+                  <p className="font-bold text-slate-800">أمين المخزن المسلّم</p>
+                  <p className="text-[9px] text-slate-500">{viewTransferModal.from_warehouse_name}</p>
+                  <p className="text-[9px] text-slate-400 border-b border-dashed border-slate-400 mx-2 pb-1">التوقيع: .....................</p>
+                </div>
+                <div className="space-y-6">
+                  <p className="font-bold text-slate-800">السائق / مندوب النقل</p>
+                  <p className="text-[9px] text-slate-500">{viewTransferModal.created_by}</p>
+                  <p className="text-[9px] text-slate-400 border-b border-dashed border-slate-400 mx-2 pb-1">التوقيع: .....................</p>
+                </div>
+                <div className="space-y-6">
+                  <p className="font-bold text-slate-800">أمين المخزن المستلم</p>
+                  <p className="text-[9px] text-slate-500">{viewTransferModal.to_warehouse_name}</p>
+                  <p className="text-[9px] text-slate-400 border-b border-dashed border-slate-400 mx-2 pb-1">التوقيع: .....................</p>
+                </div>
+                <div className="space-y-6">
+                  <p className="font-bold text-slate-800">اعتماد إدارة المعرض</p>
+                  <p className="text-[9px] text-slate-500">{viewTransferModal.manager_approved_by || 'معتمد'}</p>
+                  <p className="text-[9px] text-slate-400 border-b border-dashed border-slate-400 mx-2 pb-1">الختم: .....................</p>
+                </div>
+              </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 mt-4">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 mt-4 no-print">
               <button
                 onClick={() => window.print()}
                 className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold flex items-center gap-1.5 cursor-pointer text-xs"

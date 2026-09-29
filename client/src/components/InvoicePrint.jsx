@@ -59,7 +59,7 @@ export default function InvoicePrint({ sale, settings, onClose }) {
 يسعدنا إرفاق تفاصيل فاتورة الشراء المعتمدة وشهادة الضمان للأجهزة الكهربائية:
 
 📄 *رقم الفاتورة:* \`${sale.invoice_no}\`
-📅 *تاريخ الفاتورة:* ${new Date(sale.created_at).toLocaleDateString('ar-EG')}
+📅 *تاريخ الفاتورة:* ${new Date(sale.created_at).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}
 🏢 *الفرع:* ${sale.branch_name || 'معرض الأزهر الرئيسي'}
 
 📦 *الأجهزة المشتراة وتفاصيل السيريال والضمان:*
@@ -108,12 +108,15 @@ ${publicLink}
             box-shadow: none !important;
             border: none !important;
             width: ${printFormat === 'thermal' ? '72mm !important' : '100% !important'};
-            max-width: ${printFormat === 'thermal' ? '72mm !important' : '210mm !important'};
+            max-width: ${printFormat === 'thermal' ? '72mm !important' : '100% !important'};
             margin: 0 auto !important;
-            padding: ${printFormat === 'thermal' ? '2mm !important' : '6mm !important'};
+            padding: ${printFormat === 'thermal' ? '2mm !important' : '0mm !important'};
+            height: auto !important;
+            min-height: 0 !important;
           }
         }
       `}</style>
+
 
       <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden">
         {/* Modal Controls Bar (Hidden during print) */}
@@ -214,7 +217,7 @@ ${publicLink}
         </div>
 
         {/* Printable Invoice Container */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-100 flex justify-center">
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-100 flex justify-center print:p-0 print:bg-white print:overflow-visible">
           {printFormat === 'thermal' ? (
             /* ========================================================== */
             /* 80mm THERMAL RECEIPT LAYOUT (WIDTH EXACTLY 72mm)           */
@@ -253,7 +256,7 @@ ${publicLink}
                 </div>
                 <div className="flex justify-between">
                   <span>التاريخ والوقت:</span>
-                  <span dir="ltr">{new Date(sale.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                  <span dir="ltr">{new Date(sale.created_at).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo', dateStyle: 'short', timeStyle: 'short' })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>الفرع:</span>
@@ -375,7 +378,7 @@ ${publicLink}
             /* ========================================================== */
             <div
               id="invoice-printable-area"
-              className="bg-white shadow-md text-slate-900 w-[210mm] min-h-[297mm] p-10 rounded-sm"
+              className="bg-white shadow-md text-slate-900 w-[210mm] max-w-full p-8 print:p-0 print:min-h-0 print:w-full print:max-w-none print:shadow-none print:border-none rounded-sm"
             >
               {/* Header with Logo */}
               <div className="border-b-2 border-slate-900 pb-4 mb-4 flex items-start justify-between">
@@ -424,7 +427,7 @@ ${publicLink}
                     </p>
                   )}
                   <p className="text-xs font-mono font-bold mt-2 text-slate-800">#{sale.invoice_no}</p>
-                  <p className="text-[11px] text-slate-500">{new Date(sale.created_at).toLocaleDateString('ar-EG')}</p>
+                  <p className="text-[11px] text-slate-500">{new Date(sale.created_at).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short' })}</p>
                   <p className="text-[10px] text-blue-700 font-bold mt-1">الفرع: {sale.branch_name || 'معرض الأزهر الرئيسي'}</p>
                 </div>
               </div>

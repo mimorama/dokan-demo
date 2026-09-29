@@ -52,47 +52,83 @@
 
 @page {
   size: A4 portrait;
-  margin: 8mm;
+  margin: 6mm 8mm;
 }
 
-/* Print specific styles for Official Documents and Invoices */
+/* Print specific styles for all documents (Invoices, Reports, Receipts, Contracts, Transfers) */
 @media print {
   html, body {
-    background: white !important;
-    color: #0f172a !important;
+    background: #ffffff !important;
+    color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
+  /* Hide background interface elements */
   body * {
     visibility: hidden !important;
   }
 
-  /* Only formal document containers are visible during print */
+  /* Make all document printable areas and their contents visible */
   #official-printable-area, #official-printable-area *,
   #invoice-printable-area, #invoice-printable-area *,
-  #zreport-printable-area, #zreport-printable-area * {
+  #zreport-printable-area, #zreport-printable-area *,
+  #printable-area, #printable-area *,
+  .printable-area, .printable-area * {
     visibility: visible !important;
   }
 
+  /* Flatten modal containers so they don't force page heights or multi-page overflow */
+  .fixed {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    display: block !important;
+  }
+
+  /* Position printable documents at origin (0,0) of the print page with natural height */
   #official-printable-area,
   #invoice-printable-area,
-  #zreport-printable-area {
+  #zreport-printable-area,
+  #printable-area,
+  .printable-area {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
+    display: block !important;
     width: 100% !important;
-    min-height: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
-    background: white !important;
-    color: #000 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
     overflow: visible !important;
+  }
+
+  /* Prevent page-breaks in table rows */
+  tr, .avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .no-print {
     display: none !important;
   }
 }
+

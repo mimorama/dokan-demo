@@ -10,6 +10,7 @@ export default function OfficialReportPrint({ reportType, reportData, startDate,
   const taxId = settings?.tax_id || '654-321-987';
 
   const todayStr = new Intl.DateTimeFormat('ar-EG', {
+    timeZone: 'Africa/Cairo',
     year: 'numeric',
     month: 'long',
     day: 'numeric'
@@ -112,10 +113,10 @@ export default function OfficialReportPrint({ reportType, reportData, startDate,
         </div>
 
         {/* Printable Official Document Body */}
-        <div className="overflow-y-auto p-4 sm:p-8 flex justify-center bg-slate-200/50">
+        <div className="overflow-y-auto p-4 sm:p-8 flex justify-center bg-slate-200/50 print:p-0 print:bg-white print:overflow-visible">
           <div 
             id="official-printable-area" 
-            className="bg-white text-slate-900 w-[210mm] min-h-[297mm] p-[15mm] shadow-2xl border border-slate-300 relative font-['Cairo',sans-serif] text-xs flex flex-col justify-between"
+            className="bg-white text-slate-900 w-[210mm] max-w-full p-8 print:p-0 print:min-h-0 print:w-full print:max-w-none print:shadow-none print:border-none relative font-['Cairo',sans-serif] text-xs flex flex-col justify-between"
             dir="rtl"
           >
             {/* Top Formal Letterhead Header */}
@@ -433,17 +434,17 @@ export default function OfficialReportPrint({ reportType, reportData, startDate,
             </div>
 
             {/* Bottom Certification, Signatures & Official Stamp */}
-            <div className="border-t-2 border-slate-800 pt-4 mt-6">
+            <div className="border-t-2 border-slate-800 pt-3 mt-4 print:pt-2 print:mt-2">
               {/* Official Declaration */}
-              <div className="bg-slate-50 border border-slate-300 rounded-md p-2.5 mb-6 text-[10px] text-slate-600 leading-relaxed text-justify">
+              <div className="bg-slate-50 border border-slate-300 rounded-md p-2.5 mb-4 print:mb-2 print:p-1.5 text-[10px] text-slate-600 leading-relaxed text-justify">
                 <p className="font-bold text-slate-800 mb-0.5">إقرار واعتماد مالي ورسمي:</p>
                 نشهد نحن إدارة <strong>{storeName}</strong> بصحة ومطابقة البيانات المحاسبية والجردية والتدفقات النقدية الواردة أعلاه، ومطابقتها التامة مع الدفاتر والمستندات المخزنية ومحاضر الاستلام والتسليم خلال الفترة المحددة، وقد تم التدقيق والمراجعة بمعرفة قسم الحسابات العامة ورقابة المخازن.
               </div>
 
               {/* Signatures & Circular Seal Row */}
-              <div className="grid grid-cols-3 gap-6 text-center items-end">
+              <div className="grid grid-cols-3 gap-6 print:gap-2 text-center items-end">
                 {/* 1. Storekeeper / Cashier */}
-                <div className="space-y-8">
+                <div className="space-y-6 print:space-y-2">
                   <div>
                     <span className="font-bold text-slate-800 block text-xs">أمين الخزينة / المستودع</span>
                     <span className="text-[10px] text-slate-500">مسؤول الصندوق والحسابات</span>
@@ -455,7 +456,7 @@ export default function OfficialReportPrint({ reportType, reportData, startDate,
 
                 {/* 2. Official Circular Seal */}
                 <div className="flex flex-col items-center justify-center">
-                  <div className="w-28 h-28 rounded-full border-2 border-dashed border-amber-800/80 p-1 flex items-center justify-center relative rotate-[-6deg]">
+                  <div className="w-24 h-24 print:w-16 print:h-16 rounded-full border-2 border-dashed border-amber-800/80 p-1 flex items-center justify-center relative rotate-[-6deg]">
                     <div className="w-full h-full rounded-full border border-amber-800/60 p-1 flex flex-col items-center justify-center text-center text-amber-900 bg-amber-50/40">
                       <span className="text-[8px] font-black uppercase tracking-widest">معتمد رسمياً</span>
                       <span className="text-[10px] font-black my-0.5">{storeName}</span>

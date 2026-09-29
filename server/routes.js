@@ -4,9 +4,42 @@ const db = require('./db');
 const fs = require('fs');
 const path = require('path');
 
-// Helper to generate Invoice / Reference Numbers
+// Cairo / Egypt Timezone Helpers (Africa/Cairo)
+function getCairoDate() {
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Africa/Cairo', 
+    year: 'numeric', 
+    month: '2-digit', 
+    day: '2-digit' 
+  }).format(new Date()); // Returns "YYYY-MM-DD" in Cairo time
+}
+
+function formatCairoDate(dateObj = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Africa/Cairo', 
+    year: 'numeric', 
+    month: '2-digit', 
+    day: '2-digit' 
+  }).format(dateObj);
+}
+
+function getCairoDateTime() {
+  const formatted = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(new Date());
+  return formatted.replace(' ', 'T'); // Returns "YYYY-MM-DDTHH:mm:ss" in Cairo time
+}
+
+// Helper to generate Invoice / Reference Numbers using Cairo date
 function generateInvoiceNo(type = 'INV') {
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const dateStr = getCairoDate().replace(/-/g, '');
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   return `${type}-${dateStr}-${randomSuffix}`;
 }
@@ -60,7 +93,7 @@ function logActivity(req, actionType, targetType, targetId, description, details
 // ==========================================
 router.get('/dashboard', (req, res) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getCairoDate();
     const startOfMonth = today.slice(0, 7) + '-01';
 
     // Products & Stock
@@ -875,9 +908,10 @@ router.post('/sales', (req, res) => {
         const warrantyMonths = product ? product.warranty_months : 12;
 
         // Calculate warranty end date
-        const now = new Date();
-        const endDate = new Date(now.setMonth(now.getMonth() + warrantyMonths)).toISOString().slice(0, 10);
-        const startDate = new Date().toISOString().slice(0, 10);
+        const startDate = getCairoDate();
+        const warrantyDate = new Date();
+        warrantyDate.setMonth(warrantyDate.getMonth() + warrantyMonths);
+        const endDate = formatCairoDate(warrantyDate);
 
         let serialNumber = null;
         let serialCost = 0;
@@ -963,7 +997,7 @@ router.post('/sales', (req, res) => {
         const totalInstallment = financed + profitAmount;
         const count = Number(installment_data.installments_count) || 12;
         const monthlyAmount = Math.round((totalInstallment / count) * 100) / 100;
-        const startDate = installment_data.start_date || new Date().toISOString().slice(0, 10);
+        const startDate = installment_data.start_date || getCairoDate();
 
         // Guarantor check
         let guarantorId = installment_data.guarantor_id || null;
@@ -1022,7 +1056,7 @@ router.post('/sales', (req, res) => {
         const start = new Date(startDate);
         for (let i = 1; i <= count; i++) {
           const dueDate = new Date(start.getFullYear(), start.getMonth() + i, start.getDate());
-          const dueDateStr = dueDate.toISOString().slice(0, 10);
+          const dueDateStr = formatCairoDate(dueDate);
           insertPayment.run(planId, i, dueDateStr, monthlyAmount);
         }
       }
@@ -1282,7 +1316,7 @@ router.post('/installments/pay/:paymentId', (req, res) => {
     const paid = Number(amount_paid) || payment.amount_due;
     const isFullyPaid = paid >= payment.amount_due;
     const receiptNo = generateInvoiceNo('REC');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getCairoDate();
 
     const payTransaction = db.transaction(() => {
       // 1. Update Payment Record
@@ -1435,7 +1469,7 @@ router.post('/expenses', (req, res) => {
         title,
         amount: Number(amount),
         notes: notes || '',
-        expense_date: expense_date || new Date().toISOString().slice(0, 10)
+        expense_date: expense_date || getCairoDate()
       });
 
       const expId = info.lastInsertRowid;
@@ -1590,7 +1624,7 @@ router.get('/reports', (req, res) => {
   try {
     const { period } = req.query; // 'today', 'month', 'year', 'all'
     let dateFilter = '';
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getCairoDate();
     const startOfMonth = today.slice(0, 7) + '-01';
     const startOfYear = today.slice(0, 4) + '-01-01';
 
@@ -1665,8 +1699,8 @@ router.get('/reports/advanced', (req, res) => {
   try {
     const { reportType = 'sales', startDate, endDate } = req.query;
 
-    const start = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const end = endDate || new Date().toISOString().slice(0, 10);
+    const start = startDate || formatCairoDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+    const end = endDate || getCairoDate();
 
     if (reportType === 'sales') {
       // Detailed sales rows with items & profit
@@ -2473,7 +2507,7 @@ router.post('/transfers/stock', (req, res) => {
 
     // Support direct quantity transfer per product
     if (finalSerialIds.length === 0 && Array.isArray(items) && items.length > 0) {
-      const getSerialsForProduct = db.prepare('SELECT id, serial_number FROM product_serials WHERE product_id = ? AND warehouse_id = ? AND status = "in_stock" LIMIT ?');
+      const getSerialsForProduct = db.prepare('SELECT id, serial_number FROM product_serials WHERE product_id = ? AND warehouse_id = ? AND status = \'in_stock\' LIMIT ?');
       for (const item of items) {
         const qty = Number(item.quantity) || 1;
         const found = getSerialsForProduct.all(item.product_id, from_warehouse_id, qty);
@@ -2490,11 +2524,13 @@ router.post('/transfers/stock', (req, res) => {
     }
 
     const transferTx = db.transaction(() => {
-      const transferNo = `TR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const transferNo = generateInvoiceNo('TR');
+      const cairoDate = getCairoDate();
+      const cairoDateTime = getCairoDateTime().replace('T', ' ');
       const info = db.prepare(`
-        INSERT INTO stock_transfers (transfer_no, from_warehouse_id, to_warehouse_id, total_items, notes, created_by, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'completed')
-      `).run(transferNo, from_warehouse_id, to_warehouse_id, finalSerialIds.length, notes || '', created_by || 'مسؤول الفرع');
+        INSERT INTO stock_transfers (transfer_no, from_warehouse_id, to_warehouse_id, total_items, notes, created_by, status, transfer_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)
+      `).run(transferNo, from_warehouse_id, to_warehouse_id, finalSerialIds.length, notes || '', created_by || 'مسؤول الفرع', cairoDate, cairoDateTime);
 
       const transferId = info.lastInsertRowid;
       const insertItem = db.prepare(`
@@ -3049,7 +3085,7 @@ router.post('/stock-requests', (req, res) => {
     }
 
     const requestTx = db.transaction(() => {
-      const requestNo = `REQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const requestNo = generateInvoiceNo('REQ');
       const info = db.prepare(`
         INSERT INTO stock_requests (request_no, branch_id, from_warehouse_id, requested_by, urgency, status, notes)
         VALUES (?, ?, ?, ?, ?, 'pending', ?)
@@ -3305,7 +3341,7 @@ router.post('/shifts/open', (req, res) => {
       return res.status(400).json({ error: 'لديك وردية مفتوحة بالفعل، يجب إغلاقها أولاً قبل فتح وردية جديدة' });
     }
 
-    const shiftNo = `SH-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const shiftNo = generateInvoiceNo('SH');
     const info = db.prepare(`
       INSERT INTO cashier_shifts (shift_no, user_id, user_name, branch_id, opening_balance, status, notes)
       VALUES (?, ?, ?, ?, ?, 'open', ?)
@@ -3339,11 +3375,12 @@ router.post('/shifts/close', (req, res) => {
     const expected = opening + salesCash + installmentsCash + cashInflows - cashExpenses;
     const actual = Number(actual_cash) || 0;
     const difference = actual - expected; // Negative = deficit, Positive = surplus
+    const cairoNow = getCairoDateTime();
 
     db.prepare(`
       UPDATE cashier_shifts SET
         status = 'closed',
-        end_time = CURRENT_TIMESTAMP,
+        end_time = ?,
         cash_sales = ?,
         cash_installments = ?,
         cash_inflows = ?,
@@ -3354,13 +3391,13 @@ router.post('/shifts/close', (req, res) => {
         closed_by = ?,
         notes = ?
       WHERE id = ?
-    `).run(salesCash, installmentsCash, cashInflows, cashExpenses, expected, actual, difference, closed_by || 'الكاشير', notes || '', shift_id);
+    `).run(cairoNow.replace('T', ' '), salesCash, installmentsCash, cashInflows, cashExpenses, expected, actual, difference, closed_by || 'الكاشير', notes || '', shift_id);
 
     const zReport = {
       shift_no: shift.shift_no,
       user_name: shift.user_name,
       start_time: shift.start_time,
-      end_time: new Date().toISOString(),
+      end_time: cairoNow,
       opening_balance: opening,
       cash_sales: salesCash,
       cash_installments: installmentsCash,
@@ -3463,7 +3500,7 @@ router.post('/sales/:id/return', (req, res) => {
     if (!sale) return res.status(404).json({ error: 'فاتورة البيع غير موجودة' });
 
     const returnTx = db.transaction(() => {
-      const returnNo = `RET-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const returnNo = generateInvoiceNo('RET');
       const totalRefund = Number(refund_amount) || 0;
 
       // 1. Insert return record
@@ -3608,7 +3645,7 @@ router.post('/inventory/audit', (req, res) => {
     }
 
     // 3. Save audit record
-    const auditNo = `AUDIT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const auditNo = generateInvoiceNo('AUDIT');
     const info = db.prepare(`
       INSERT INTO inventory_audits (audit_no, warehouse_id, auditor_name, total_expected, total_scanned, matched_count, missing_count, surplus_count, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -3740,7 +3777,7 @@ router.post('/installments/:id/reschedule', (req, res) => {
       for (let i = 1; i <= months; i++) {
         const dueDate = new Date(startDateObj);
         dueDate.setMonth(dueDate.getMonth() + (i - 1));
-        const dueDateStr = dueDate.toISOString().slice(0, 10);
+        const dueDateStr = formatCairoDate(dueDate);
         const amount = (i === months) ? (remainingBalance - (monthlyAmount * (months - 1))) : monthlyAmount;
         insertPayment.run(planId, i, dueDateStr, amount);
       }
@@ -3750,7 +3787,7 @@ router.post('/installments/:id/reschedule', (req, res) => {
         UPDATE installment_plans 
         SET monthly_installment = ?, total_months = ?, notes = COALESCE(notes || ' | ', '') || ?
         WHERE id = ?
-      `).run(monthlyAmount, months, `تمت إعادة الجدولة على ${months} شهر بتاريخ ${new Date().toISOString().slice(0, 10)} - ${notes || ''}`, planId);
+      `).run(monthlyAmount, months, `تمت إعادة الجدولة على ${months} شهر بتاريخ ${getCairoDate()} - ${notes || ''}`, planId);
     });
 
     rescheduleTx();
@@ -3772,7 +3809,7 @@ router.post('/backup/create', (req, res) => {
       fs.mkdirSync(backupsDir, { recursive: true });
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const timestamp = getCairoDateTime().replace(/[:.]/g, '-');
     const backupFileName = `dokan_backup_${timestamp}.db`;
     const targetPath = path.join(backupsDir, backupFileName);
 
@@ -3786,7 +3823,7 @@ router.post('/backup/create', (req, res) => {
           filename: backupFileName,
           backup_filename: backupFileName,
           size_kb: Math.round(stats.size / 1024),
-          created_at: new Date().toISOString(),
+          created_at: getCairoDateTime(),
           message: 'تم إنشاء النسخة الاحتياطية بنجاح وحفظها في مجلد backups'
         });
       })
@@ -3930,7 +3967,7 @@ router.get('/products/outlet', (req, res) => {
 router.get('/reconciliation/daily', (req, res) => {
   try {
     const { date, branch_id } = req.query;
-    const targetDate = date || new Date().toISOString().slice(0, 10);
+    const targetDate = date || getCairoDate();
 
     let branchFilter = '';
     const branchParams = [];

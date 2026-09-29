@@ -39,8 +39,8 @@ export default function ContractPrint({ plan, settings, onClose }) {
         </div>
 
         {/* Contract Body */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-100 flex justify-center">
-          <div id="printable-area" className="w-[210mm] min-h-[297mm] p-10 bg-white text-slate-900 shadow-md text-xs leading-relaxed">
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-100 flex justify-center print:p-0 print:bg-white print:overflow-visible">
+          <div id="printable-area" className="w-[210mm] max-w-full p-8 print:p-0 print:min-h-0 print:shadow-none print:border-none bg-white text-slate-900 shadow-md text-xs leading-relaxed">
             {/* Header */}
             <div className="text-center border-b-2 border-slate-900 pb-3 mb-4">
               <img

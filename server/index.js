@@ -1,3 +1,5 @@
+process.env.TZ = 'Africa/Cairo';
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
