@@ -1,0 +1,12 @@
+{
+  "name": "Dokan Appliances Management System",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "forwardPorts": [5959],
+  "portsAttributes": {
+    "5959": {
+      "label": "Dokan Appliances App",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "npm install && npm run build"
+}
