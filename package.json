@@ -1,0 +1,33 @@
+{
+  "name": "dokan",
+  "version": "1.0.0",
+  "description": "نظام إدارة معرض ومحل الأجهزة الكهربائية والأقساط",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "seed": "node server/seed.js",
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "build:all": "npm install && npm --prefix client install && npm --prefix client run build",
+    "dev:server": "node server/index.js",
+    "dev:client": "cd client && npm run dev"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "appliances",
+    "pos",
+    "installments",
+    "inventory",
+    "serial-tracking"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1"
+  }
+}

@@ -1,0 +1,26 @@
+# Node dependencies
+node_modules/
+client/node_modules/
+
+# Production build output (built automatically on cloud via npm run build)
+client/dist/
+
+# SQLite WAL and journal files (dokan.db is kept for initial demo data)
+dokan.db-wal
+dokan.db-shm
+dokan.db-journal
+
+# Backup archives and release zip packages
+backups/
+Dokan_Release_*/
+*.zip
+*.tar.gz
+
+# Environment & Logs
+.env
+*.log
+npm-debug.log*
+
+# OS specific files
+.DS_Store
+Thumbs.db

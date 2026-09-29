@@ -1,0 +1,804 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Plus, 
+  Search, 
+  Package, 
+  Edit3, 
+  Trash2, 
+  Barcode, 
+  ShieldCheck, 
+  AlertTriangle, 
+  Filter, 
+  Check, 
+  X,
+  PhoneCall,
+  Building2,
+  Tags,
+  CheckSquare,
+  Square
+} from 'lucide-react';
+import { api } from '../api';
+import BarcodeLabelModal from '../components/BarcodeLabelModal';
+
+export default function Products({ settings }) {
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedBrand, setSelectedBrand] = useState('');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  // Modals
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showSerialModal, setShowSerialModal] = useState(false);
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [suppliersList, setSuppliersList] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [barcodeProduct, setBarcodeProduct] = useState(null);
+
+  // Form State for Brand with Multi-supplier link
+  const [brandForm, setBrandForm] = useState({
+    name: '',
+    country: 'مصر',
+    agent_name: '',
+    agent_phone: '',
+    selected_suppliers: []
+  });
+
+  // Form State for New/Edit Product
+  const [formData, setFormData] = useState({
+    name: '',
+    category_id: '',
+    brand_id: '',
+    model_number: '',
+    barcode: '',
+    specifications: '',
+    cost_price: '',
+    cash_price: '',
+    installment_price: '',
+    warranty_months: 12,
+    warranty_agency: '',
+    alert_quantity: 2,
+    initial_serials: ''
+  });
+
+  // Batch Serials Form
+  const [batchSerials, setBatchSerials] = useState('');
+  const [batchCostPrice, setBatchCostPrice] = useState('');
+
+  const currency = settings?.currency || 'ج.م';
+
+  useEffect(() => {
+    loadData();
+  }, [selectedCategory, selectedBrand, search]);
+
+  const loadData = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (selectedCategory) params.append('category_id', selectedCategory);
+      if (selectedBrand) params.append('brand_id', selectedBrand);
+      if (search) params.append('search', search);
+
+      const [prods, cats, brnds] = await Promise.all([
+        api.getProducts(params.toString()),
+        api.getCategories(),
+        api.getBrands()
+      ]);
+      setProducts(prods);
+      setCategories(cats);
+      setBrands(brnds);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenAddModal = (product = null) => {
+    if (product) {
+      setSelectedProduct(product);
+      setFormData({
+        name: product.name,
+        category_id: product.category_id || '',
+        brand_id: product.brand_id || '',
+        model_number: product.model_number || '',
+        barcode: product.barcode || '',
+        specifications: product.specifications || '',
+        cost_price: product.cost_price,
+        cash_price: product.cash_price,
+        installment_price: product.installment_price,
+        warranty_months: product.warranty_months,
+        warranty_agency: product.warranty_agency || '',
+        alert_quantity: product.alert_quantity,
+        initial_serials: ''
+      });
+    } else {
+      setSelectedProduct(null);
+      setFormData({
+        name: '',
+        category_id: categories[0]?.id || '',
+        brand_id: brands[0]?.id || '',
+        model_number: '',
+        barcode: '',
+        specifications: '',
+        cost_price: '',
+        cash_price: '',
+        installment_price: '',
+        warranty_months: 12,
+        warranty_agency: '',
+        alert_quantity: 2,
+        initial_serials: ''
+      });
+    }
+    setShowAddModal(true);
+  };
+
+  const handleSaveProduct = async (e) => {
+    e.preventDefault();
+    try {
+      if (selectedProduct) {
+        await api.updateProduct(selectedProduct.id, formData);
+      } else {
+        await api.createProduct(formData);
+      }
+      setShowAddModal(false);
+      loadData();
+    } catch (err) {
+      alert(err.message || 'حدث خطأ أثناء حفظ الجهاز');
+    }
+  };
+
+  const handleDeleteProduct = async (id) => {
+    if (confirm('هل أنت متأكد من حذف هذا الجهاز من النظام؟')) {
+      try {
+        await api.deleteProduct(id);
+        loadData();
+      } catch (err) {
+        alert(err.message || 'خطأ أثناء الحذف');
+      }
+    }
+  };
+
+  const handleOpenAddSerials = (product) => {
+    setSelectedProduct(product);
+    setBatchSerials('');
+    setBatchCostPrice(product.cost_price);
+    setShowSerialModal(true);
+  };
+
+  const handleSaveSerials = async (e) => {
+    e.preventDefault();
+    if (!batchSerials.trim()) {
+      alert('الرجاء كتابة أو مسح الأرقام التسلسلية');
+      return;
+    }
+
+    try {
+      await api.addSerialsBatch({
+        product_id: selectedProduct.id,
+        serials: batchSerials,
+        cost_price: batchCostPrice
+      });
+      setShowSerialModal(false);
+      loadData();
+    } catch (err) {
+      alert(err.message || 'خطأ أثناء إضافة الأرقام التسلسلية');
+    }
+  };
+
+  const handleOpenAddBrandModal = async () => {
+    try {
+      const sups = await api.getSuppliers();
+      setSuppliersList(sups || []);
+    } catch (e) {
+      console.error(e);
+    }
+    setBrandForm({
+      name: '',
+      country: 'مصر',
+      agent_name: '',
+      agent_phone: '',
+      selected_suppliers: []
+    });
+    setShowBrandModal(true);
+  };
+
+  const handleToggleSupplierInBrand = (supId) => {
+    setBrandForm(prev => {
+      const exists = prev.selected_suppliers.includes(supId);
+      return {
+        ...prev,
+        selected_suppliers: exists
+          ? prev.selected_suppliers.filter(id => id !== supId)
+          : [...prev.selected_suppliers, supId]
+      };
+    });
+  };
+
+  const handleSaveBrand = async (e) => {
+    e.preventDefault();
+    if (!brandForm.name.trim()) {
+      alert('اسم الماركة مطلوب');
+      return;
+    }
+    try {
+      const newBrand = await api.createBrand({
+        name: brandForm.name.trim(),
+        country: brandForm.country,
+        agent_name: brandForm.agent_name,
+        agent_phone: brandForm.agent_phone,
+        supplier_ids: brandForm.selected_suppliers
+      });
+      setShowBrandModal(false);
+      const updatedBrands = await api.getBrands();
+      setBrands(updatedBrands);
+      if (showAddModal) {
+        setFormData(prev => ({ ...prev, brand_id: newBrand.id }));
+      }
+    } catch (err) {
+      alert(err.message || 'خطأ أثناء إضافة الماركة');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header & Quick Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div>
+          <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+            <Package className="w-6 h-6 text-blue-600" />
+            إدارة الأصناف والأجهزة الكهربائية
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            سجل شامل بالأصناف، الأسعار، مدد الضمان والوكيل المعتمد، وتتبع أرقام السيريال المتاحة والمباعة
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={handleOpenAddBrandModal}
+            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+          >
+            <Building2 className="w-4 h-4 text-amber-400" />
+            <span>إضافة ماركة جديدة</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleOpenAddModal()}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 active:scale-98"
+          >
+            <Plus className="w-4 h-4" />
+            <span>إضافة صنف / جهاز جديد</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Filters & Search */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="relative">
+          <Search className="w-4 h-4 absolute right-3 top-3 text-slate-400" />
+          <input
+            type="text"
+            placeholder="بحث باسم الجهاز، الموديل، أو الباركود..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+          />
+        </div>
+
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none"
+        >
+          <option value="">جميع التصنيفات (ثلاجات، غسالات...)</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedBrand}
+          onChange={(e) => setSelectedBrand(e.target.value)}
+          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none"
+        >
+          <option value="">جميع الماركات (توشيبا، إل جي، سامسونج...)</option>
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Products Table */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-right text-xs">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold">
+                <th className="py-3 px-4">اسم الجهاز والموديل</th>
+                <th className="py-3 px-4">التصنيف والماركة</th>
+                <th className="py-3 px-4">سعر التكلفة</th>
+                <th className="py-3 px-4">سعر الكاش</th>
+                <th className="py-3 px-4">سعر التقسيط</th>
+                <th className="py-3 px-4">المخزون (سيريال متاح)</th>
+                <th className="py-3 px-4">فترة الضمان والوكيل</th>
+                <th className="py-3 px-4 text-center">إجراءات</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {products.map((p) => {
+                const isLow = p.in_stock_count <= p.alert_quantity;
+                return (
+                  <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="py-3 px-4">
+                      <p className="font-extrabold text-slate-900 text-sm">{p.name}</p>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono mt-0.5">
+                        {p.model_number && <span>موديل: {p.model_number}</span>}
+                        {p.barcode && <span>| باركود: {p.barcode}</span>}
+                      </div>
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <span className="font-bold text-slate-700 block">{p.category_name || 'عام'}</span>
+                      <span className="text-[11px] text-blue-600 font-semibold">{p.brand_name || '---'}</span>
+                    </td>
+
+                    <td className="py-3 px-4 text-slate-500 font-bold" dir="ltr">
+                      {Number(p.cost_price).toLocaleString()} {currency}
+                    </td>
+
+                    <td className="py-3 px-4 text-slate-900 font-black text-sm" dir="ltr">
+                      {Number(p.cash_price).toLocaleString()} {currency}
+                    </td>
+
+                    <td className="py-3 px-4 text-blue-700 font-extrabold" dir="ltr">
+                      {Number(p.installment_price).toLocaleString()} {currency}
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 rounded-full font-black text-xs ${
+                          p.in_stock_count === 0
+                            ? 'bg-rose-100 text-rose-700'
+                            : isLow
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {p.in_stock_count} أجهزة
+                        </span>
+                        <button
+                          onClick={() => handleOpenAddSerials(p)}
+                          title="شحن وتوريد أرقام سيريال جديدة"
+                          className="p-1 rounded bg-slate-100 hover:bg-blue-100 text-blue-700 transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">مباع: {p.sold_count}</span>
+                    </td>
+
+                    <td className="py-3 px-4 text-[11px]">
+                      <div className="flex items-center gap-1 font-bold text-emerald-700">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>{p.warranty_months} شهر ({Math.round(p.warranty_months / 12)} سنين)</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{p.warranty_agency || p.agent_name || 'الوكيل المعتمد'}</p>
+                    </td>
+
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => setBarcodeProduct(p)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
+                          title="طباعة ملصق وباركود الجهاز"
+                        >
+                          <Barcode className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenAddModal(p)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                          title="تعديل الجهاز"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProduct(p.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="حذف الجهاز"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Add / Edit Product Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <h3 className="font-bold text-base text-slate-800">
+                {selectedProduct ? 'تعديل بيانات الجهاز' : 'إضافة جهاز كهربائي جديد'}
+              </h3>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">اسم الجهاز *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: ثلاجة شارب 16 قدم نوفروست"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">رقم الموديل (Model)</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: SJ-GV58A-SL"
+                    value={formData.model_number}
+                    onChange={(e) => setFormData({ ...formData, model_number: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">التصنيف</label>
+                  <select
+                    value={formData.category_id}
+                    onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-semibold text-slate-700"
+                  >
+                    <option value="">اختر التصنيف...</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-600 font-bold">الماركة والشركة</label>
+                    <button
+                      type="button"
+                      onClick={handleOpenAddBrandModal}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
+                    >
+                      + ماركة جديدة
+                    </button>
+                  </div>
+                  <select
+                    value={formData.brand_id}
+                    onChange={(e) => setFormData({ ...formData, brand_id: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-semibold text-slate-700"
+                  >
+                    <option value="">اختر الماركة...</option>
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">سعر الشراء / التكلفة</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="0"
+                    value={formData.cost_price}
+                    onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">سعر بيع الكاش</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="0"
+                    value={formData.cash_price}
+                    onChange={(e) => setFormData({ ...formData, cash_price: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">سعر بيع التقسيط</label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={formData.installment_price}
+                    onChange={(e) => setFormData({ ...formData, installment_price: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-blue-700"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">مدة الضمان (بالشهور)</label>
+                  <input
+                    type="number"
+                    value={formData.warranty_months}
+                    onChange={(e) => setFormData({ ...formData, warranty_months: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">120 = 10 سنوات، 60 = 5 سنوات، 24 = سنتين</span>
+                </div>
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">اسم الوكيل المعتمد والخط الساخن</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: العربي جروب (19319)"
+                    value={formData.warranty_agency}
+                    onChange={(e) => setFormData({ ...formData, warranty_agency: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">المواصفات الفنية وسعة الجهاز</label>
+                <textarea
+                  rows={2}
+                  placeholder="مثال: سعة 380 لتر، لون سيلفر ديجيتال، انفرتر توفير طاقة..."
+                  value={formData.specifications}
+                  onChange={(e) => setFormData({ ...formData, specifications: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                />
+              </div>
+
+              {!selectedProduct && (
+                <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3">
+                  <label className="block text-blue-900 font-bold mb-1">
+                    الأرقام التسلسلية الأولية (Serial Numbers) - اختياري
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="اكتب أو انسخ أرقام السيريال للأجهزة المستلمة (كل سيريال في سطر أو مفصولة بفواصل)..."
+                    value={formData.initial_serials}
+                    onChange={(e) => setFormData({ ...formData, initial_serials: e.target.value })}
+                    className="w-full bg-white border border-blue-200 rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md cursor-pointer"
+                >
+                  حفظ الجهاز
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Serials Modal */}
+      {showSerialModal && selectedProduct && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <div>
+                <h3 className="font-bold text-base text-slate-800">شحن وتوريد أرقام سيريال</h3>
+                <p className="text-xs text-blue-600 font-bold mt-0.5">{selectedProduct.name}</p>
+              </div>
+              <button onClick={() => setShowSerialModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSerials} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">أرقام السيريال المستلمة (Serial Numbers) *</label>
+                <p className="text-[11px] text-slate-400 mb-1">
+                  يمكنك مسح الباركود الخاص بكل جهاز بالماسح الضوئي أو كتابة السيريالات مفصولة بأسطر:
+                </p>
+                <textarea
+                  rows={5}
+                  required
+                  placeholder="TSH-REF-1001&#10;TSH-REF-1002&#10;TSH-REF-1003"
+                  value={batchSerials}
+                  onChange={(e) => setBatchSerials(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-mono font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">تكلفة الشراء للجهاز الواحد</label>
+                <input
+                  type="number"
+                  value={batchCostPrice}
+                  onChange={(e) => setBatchCostPrice(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowSerialModal(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md cursor-pointer"
+                >
+                  تسجيل الأجهزة في المخزن
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Brand with Multi-Supplier Link Modal */}
+      {showBrandModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 text-xs text-slate-800">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-amber-500" />
+                إضافة ماركة جديدة وربطها بشركات التوريد
+              </h3>
+              <button onClick={() => setShowBrandModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBrand} className="space-y-3.5">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">اسم الماركة التجارية *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: توشيبا العربي / إل جي LG / تورنيدو / بيكو"
+                  value={brandForm.name}
+                  onChange={(e) => setBrandForm({ ...brandForm, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">بلد المنشأ والتصنيع</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: مصر / اليابان / تركيا"
+                    value={brandForm.country}
+                    onChange={(e) => setBrandForm({ ...brandForm, country: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">الوكيل المعتمد</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: مجموعة العربي للتجارة"
+                    value={brandForm.agent_name}
+                    onChange={(e) => setBrandForm({ ...brandForm, agent_name: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">هاتف وخط ساخن الوكيل / الصيانة</label>
+                <input
+                  type="text"
+                  placeholder="مثال: 19319"
+                  value={brandForm.agent_phone}
+                  onChange={(e) => setBrandForm({ ...brandForm, agent_phone: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono"
+                  dir="ltr"
+                />
+              </div>
+
+              {/* Multi-Supplier Selection Checkboxes */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-slate-800 font-extrabold text-xs">
+                    الموردين والشركات الموزعة لهذه الماركة:
+                  </label>
+                  <span className="text-[11px] text-blue-700 font-bold">
+                    ({brandForm.selected_suppliers.length} موردين محددين)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  حدد الشركات والموزعين المعتمدين الذين يقومون بتوريد هذه الماركة للمعرض:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pt-1">
+                  {suppliersList.map((sup) => {
+                    const isSelected = brandForm.selected_suppliers.includes(sup.id);
+                    return (
+                      <button
+                        key={sup.id}
+                        type="button"
+                        onClick={() => handleToggleSupplierInBrand(sup.id)}
+                        className={`flex items-center gap-2 p-2 rounded-xl border text-right transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-50 border-blue-400 text-blue-900 font-bold'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />
+                        ) : (
+                          <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                        )}
+                        <div className="truncate">
+                          <p className="text-xs font-bold truncate">{sup.name}</p>
+                          {sup.company && <p className="text-[10px] text-slate-400 truncate">{sup.company}</p>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {suppliersList.length === 0 && (
+                    <p className="text-[11px] text-slate-400 col-span-2 text-center py-2">لا يوجد موردين مسجلين حالياً</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowBrandModal(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>حفظ الماركة الآن</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Barcode Sticker Print Modal */}
+      {barcodeProduct && (
+        <BarcodeLabelModal
+          product={barcodeProduct}
+          settings={settings}
+          onClose={() => setBarcodeProduct(null)}
+        />
+      )}
+    </div>
+  );
+}
