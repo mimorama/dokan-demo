@@ -174,22 +174,24 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-slate-50 font-['Cairo',sans-serif] text-slate-900" dir="rtl">
       {/* Sidebar */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        overdueCount={overdueCount}
-        storeName={storeName}
-        tagline={settings?.tagline}
-        logoUrl={settings?.logo_url}
-        logoIconUrl="/logo_icon.png"
-        currentUser={currentUser}
-        onSwitchUser={() => setIsLoginModalOpen(true)}
-        onLogout={handleLogout}
-        onOpenCalculator={() => setIsCalculatorOpen(true)}
-      />
+      <div className="print:hidden">
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          overdueCount={overdueCount}
+          storeName={storeName}
+          tagline={settings?.tagline}
+          logoUrl={settings?.logo_url}
+          logoIconUrl="/logo_icon.png"
+          currentUser={currentUser}
+          onSwitchUser={() => setIsLoginModalOpen(true)}
+          onLogout={handleLogout}
+          onOpenCalculator={() => setIsCalculatorOpen(true)}
+        />
+      </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 print:hidden">
         <Header
           title={titles[activeTab] || storeName}
           onNewSale={() => setActiveTab('pos')}

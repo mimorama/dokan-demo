@@ -70,65 +70,109 @@
     print-color-adjust: exact !important;
   }
 
-  /* Hide background interface elements */
-  body * {
-    visibility: hidden !important;
+  /* 1. Hide non-printable app UI cleanly */
+  .no-print,
+  .print\:hidden,
+  aside,
+  header,
+  nav,
+  main,
+  #sidebar,
+  .sidebar,
+  #root > div > aside,
+  #root > div > .min-w-0 {
+    display: none !important;
   }
 
-  /* Make all document printable areas and their contents visible */
-  #official-printable-area, #official-printable-area *,
-  #invoice-printable-area, #invoice-printable-area *,
-  #zreport-printable-area, #zreport-printable-area *,
-  #printable-area, #printable-area *,
-  .printable-area, .printable-area * {
-    visibility: visible !important;
-  }
-
-  /* Flatten modal containers so they don't force page heights or multi-page overflow */
+  /* 2. Flatten and unclip modal dialog overlays */
   .fixed {
     position: static !important;
     inset: auto !important;
     background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    filter: none !important;
     padding: 0 !important;
     margin: 0 !important;
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
     display: block !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
   }
 
-  /* Position printable documents at origin (0,0) of the print page with natural height */
+  .fixed > div {
+    position: static !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+
+  .fixed > div > div:not(.no-print):not(.print\:hidden) {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    display: block !important;
+    width: 100% !important;
+  }
+
+  /* 3. Keep printable documents in natural layout flow (NO position: absolute) for natural multi-page pagination */
   #official-printable-area,
   #invoice-printable-area,
   #zreport-printable-area,
   #printable-area,
   .printable-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    position: static !important;
     display: block !important;
     width: 100% !important;
     max-width: 100% !important;
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
     overflow: visible !important;
+    visibility: visible !important;
   }
 
-  /* Prevent page-breaks in table rows */
+  #official-printable-area *,
+  #invoice-printable-area *,
+  #zreport-printable-area *,
+  #printable-area *,
+  .printable-area * {
+    visibility: visible !important;
+  }
+
+  /* 4. Table rules & avoid breaking rows across pages */
   tr, .avoid-break {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
 
-  .no-print {
-    display: none !important;
+  table {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  thead {
+    display: table-header-group !important;
   }
 }
 

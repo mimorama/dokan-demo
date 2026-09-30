@@ -1338,14 +1338,14 @@ router.get('/sales/:id', (req, res) => {
     sale.items = db.prepare(`
       SELECT 
         si.*,
-        p.name as product_name,
-        p.model_number,
-        p.specifications,
-        p.warranty_agency,
+        COALESCE(p.name, si.notes, 'جهاز غير معرف') as product_name,
+        COALESCE(p.model_number, '') as model_number,
+        COALESCE(p.specifications, '') as specifications,
+        COALESCE(p.warranty_agency, '') as warranty_agency,
         b.name as brand_name,
         cat.name as category_name
       FROM sale_items si
-      JOIN products p ON si.product_id = p.id
+      LEFT JOIN products p ON si.product_id = p.id
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN categories cat ON p.category_id = cat.id
       WHERE si.sale_id = ?
@@ -2939,13 +2939,13 @@ router.get('/invoices/public/:invoiceNo', (req, res) => {
     const items = db.prepare(`
       SELECT 
         si.*,
-        p.name as product_name,
-        p.model_number,
-        p.specifications,
-        p.warranty_agency,
+        COALESCE(p.name, si.notes, 'جهاز كهربائي') as product_name,
+        COALESCE(p.model_number, '') as model_number,
+        COALESCE(p.specifications, '') as specifications,
+        COALESCE(p.warranty_agency, 'الوكيل المعتمد') as warranty_agency,
         b.name as brand_name
       FROM sale_items si
-      JOIN products p ON si.product_id = p.id
+      LEFT JOIN products p ON si.product_id = p.id
       LEFT JOIN brands b ON p.brand_id = b.id
       WHERE si.sale_id = ?
     `).all(sale.id);
