@@ -26,9 +26,18 @@ if (dbPath !== defaultDbPath && !fs.existsSync(dbPath)) {
 
 const db = new Database(dbPath);
 
-// Enable WAL mode for performance & concurrent reads
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// Enable WAL mode for performance & concurrent reads, with safe fallback
+try {
+  db.pragma('journal_mode = WAL');
+} catch (err) {
+  console.warn('⚠️ WAL mode notice (fallback to standard journal):', err.message);
+}
+
+try {
+  db.pragma('foreign_keys = ON');
+} catch (err) {
+  console.warn('⚠️ foreign_keys notice:', err.message);
+}
 
 function initDb() {
   db.exec(`

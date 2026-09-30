@@ -13,7 +13,7 @@
     "test": "node -e \"require('./server/db'); console.log('✅ Dokan system checks passed');\""
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "keywords": [
     "appliances",
@@ -26,7 +26,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^12.11.1",
     "cors": "^2.8.6",
     "dotenv": "^18.0.4",
     "express": "^5.2.1"

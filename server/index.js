@@ -1,11 +1,15 @@
-process.env.TZ = 'Africa/Cairo';
+console.log('🔄 جاري تشغيل خادم دكان عبد العزيز للأجهزة الكهربائية...');
+console.log(`📦 Node.js: ${process.version} | Platform: ${process.platform} (${process.arch})`);
 
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+
+console.log('🔄 تحميل المسارات وقاعدة البيانات...');
 const routes = require('./routes');
+console.log('✅ تم تحميل المسارات وقاعدة البيانات بنجاح.');
 
 const app = express();
 const PORT = process.env.PORT || 5959;
@@ -48,14 +52,16 @@ app.use((req, res, next) => {
 
 // Helper to find Local IP on Wi-Fi/LAN
 function getLocalIp() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const net of interfaces[name]) {
-      if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const net of interfaces[name]) {
+        if (net.family === 'IPv4' && !net.internal) {
+          return net.address;
+        }
       }
     }
-  }
+  } catch (_) {}
   return 'localhost';
 }
 
