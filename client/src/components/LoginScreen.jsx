@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Lock, 
   User, 
@@ -7,19 +7,78 @@ import {
   AlertCircle, 
   Eye, 
   EyeOff, 
-  Server
+  Server,
+  Tv,
+  Wind,
+  CreditCard,
+  Barcode,
+  Sparkles,
+  Shield,
+  Layers,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  Building2,
+  Boxes,
+  BadgePercent,
+  Users
 } from 'lucide-react';
 import { api } from '../api';
 
 export default function LoginScreen({ settings, onLoginSuccess }) {
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(() => {
+    return localStorage.getItem('dokan_remembered_username') || '';
+  });
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    return !!localStorage.getItem('dokan_remembered_username');
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedQuickRole, setSelectedQuickRole] = useState(null);
+
+  const [currentTime, setCurrentTime] = useState('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTime(
+        new Intl.DateTimeFormat('ar-EG', {
+          timeZone: 'Africa/Cairo',
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        }).format(now)
+      );
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const storeName = settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية';
-  const logoUrl = settings?.logo_url || '/logo.svg';
+  const tagline = settings?.tagline || 'ثلاجات • غسالات • شاشات • تكييفات • كاش وبالتقسيط المريح';
+  const logoUrl = settings?.logo_url || '/logo.png';
+
+  const quickAccounts = [
+    { username: 'admin', pass: '123', label: 'المدير العام', role: 'إدارة كاملة', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+    { username: 'cashier1', pass: '123', label: 'كاشير ومبيعات', role: 'نقطة البيع POS', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+    { username: 'faisal_mgr', pass: '123', label: 'مدير فرع فيصل', role: 'إدارة الفرع', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+    { username: 'store1', pass: '123', label: 'أمين المستودع', role: 'المخازن والتحويلات', color: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+    { username: 'accountant1', pass: '123', label: 'مراجع الحسابات', role: 'المالية والخزينة', color: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' },
+  ];
+
+  const handleSelectQuickAccount = (acc) => {
+    setUsername(acc.username);
+    setPassword(acc.pass);
+    setSelectedQuickRole(acc.username);
+    setError('');
+  };
 
   const handleLogin = async (e) => {
     e?.preventDefault();
@@ -34,9 +93,14 @@ export default function LoginScreen({ settings, onLoginSuccess }) {
     try {
       const res = await api.login(username.trim(), password.trim());
       if (res && res.user) {
+        if (rememberMe) {
+          localStorage.setItem('dokan_remembered_username', username.trim());
+        } else {
+          localStorage.removeItem('dokan_remembered_username');
+        }
         onLoginSuccess(res.user);
       } else {
-        setError('بيانات الدخول غير صحيحة، يرجى المحاولة مجدداً');
+        setError('بيانات الدخول غير صحيحة، يرجى مراجعة اسم المستخدم أو كلمة المرور');
       }
     } catch (err) {
       setError(err.message || 'فشل تسجيل الدخول، تأكد من صحة اسم المستخدم وكلمة المرور');
@@ -46,125 +110,315 @@ export default function LoginScreen({ settings, onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex flex-col justify-between p-4 sm:p-6 text-slate-800 font-['Cairo',sans-serif]" dir="rtl">
-      {/* Top Bar Indicator */}
-      <div className="max-w-4xl w-full mx-auto flex items-center justify-between text-xs text-slate-400 pt-2 pb-4">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span className="font-bold text-slate-300">نظام التشغيل الآمن متصل</span>
-        </div>
-        <div className="flex items-center gap-1.5 font-mono text-[11px] bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700">
-          <Server className="w-3.5 h-3.5 text-blue-400" />
-          <span>منفذ النظام: 5959</span>
-        </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-x-hidden font-['Cairo',sans-serif] selection:bg-blue-600 selection:text-white" dir="rtl">
+      {/* Background Decorative Lighting & Mesh Effects */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[-10%] right-[-5%] w-[550px] h-[550px] bg-blue-600/15 rounded-full blur-[140px] transform-gpu"></div>
+        <div className="absolute bottom-[-10%] left-[-5%] w-[550px] h-[550px] bg-indigo-600/15 rounded-full blur-[140px] transform-gpu"></div>
+        <div className="absolute top-[35%] left-[20%] w-[400px] h-[400px] bg-amber-500/10 rounded-full blur-[130px] transform-gpu"></div>
+        {/* Subtle grid pattern */}
+        <div className="absolute inset-0 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:24px_24px] opacity-25"></div>
       </div>
 
-      {/* Main Login Card */}
-      <div className="max-w-md w-full mx-auto bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 my-auto">
-        {/* Brand Banner */}
-        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-6 text-white text-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mr-10 -mt-10 w-40 h-40 bg-blue-500/10 rounded-full blur-2xl pointer-events-none"></div>
-
-          <div className="w-20 h-20 mx-auto rounded-2xl bg-white/10 border border-white/20 p-3 flex items-center justify-center shadow-inner mb-3">
-            <img 
-              src={logoUrl} 
-              alt={storeName} 
-              className="max-h-full max-w-full object-contain drop-shadow"
-              onError={(e) => { e.target.src = '/logo.svg'; }}
-            />
+      {/* Top Bar / Status Strip */}
+      <header className="relative z-10 w-full border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md px-4 sm:px-8 py-3">
+        <div className="max-w-6xl w-full mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 font-semibold shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>السيرفر متصل ومؤمن</span>
+            </span>
+            <span className="hidden sm:flex items-center gap-1.5 text-slate-400 font-mono text-[11px] bg-slate-900/80 px-2.5 py-1 rounded-full border border-slate-800">
+              <Server className="w-3.5 h-3.5 text-blue-400" />
+              <span>منفذ النظام: 5959</span>
+            </span>
           </div>
 
-          <h1 className="text-xl font-black text-amber-400 tracking-tight">{storeName}</h1>
-          <p className="text-xs text-blue-200 mt-1 font-medium">
-            بوابة تسجيل الدخول والمصادقة الأمنية للنظام
-          </p>
+          <div className="flex items-center gap-3 text-slate-400">
+            {currentTime && (
+              <span className="hidden md:flex items-center gap-1.5 text-[11.5px] font-medium text-slate-300">
+                <Clock className="w-3.5 h-3.5 text-blue-400" />
+                <span>{currentTime}</span>
+              </span>
+            )}
+            <span className="px-2.5 py-0.5 rounded-full bg-blue-950/90 border border-blue-500/30 text-blue-300 text-[10.5px] font-mono font-bold tracking-wider">
+              v3.1.0
+            </span>
+          </div>
         </div>
+      </header>
 
-        {/* Form Body */}
-        <div className="p-6 sm:p-8 space-y-5">
-          {error && (
-            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-700 font-bold flex items-center gap-2 animate-shake">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600" />
-              <span>{error}</span>
-            </div>
-          )}
+      {/* Main Content Area: Split 2-Column Showcase & Login */}
+      <main className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8 my-auto">
+        <div className="max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+          
+          {/* Right Showcase Column (Appliances Retail Experience) */}
+          <div className="lg:col-span-6 flex flex-col justify-between bg-gradient-to-br from-slate-900/90 via-blue-950/50 to-slate-900/90 border border-blue-500/20 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden group">
+            {/* Ambient glow in card */}
+            <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-extrabold text-slate-700 mb-1.5">اسم المستخدم *</label>
-              <div className="relative">
-                <div className="absolute right-3.5 top-3 text-slate-400">
-                  <User className="w-4 h-4" />
+            <div className="space-y-6 relative z-10">
+              {/* Brand Header */}
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-blue-400/30 p-2.5 flex items-center justify-center shadow-lg shadow-blue-950/50 flex-shrink-0 group-hover:border-blue-400/50 transition duration-300">
+                  <img 
+                    src={logoUrl} 
+                    alt={storeName} 
+                    className="max-h-full max-w-full object-contain drop-shadow"
+                    onError={(e) => { e.target.src = '/logo.svg'; }}
+                  />
                 </div>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  placeholder="admin, cashier1, store1..."
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl pr-10 pl-3 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition"
-                  dir="ltr"
-                />
+                <div className="flex-1 min-w-0">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-400/30 text-blue-300 text-[11px] font-bold mb-1">
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>المنظومة السحابية والمحلية المعتمدة</span>
+                  </div>
+                  <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-snug">
+                    {storeName}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-300 font-medium mt-1 leading-relaxed">
+                    {tagline}
+                  </p>
+                </div>
+              </div>
+
+              {/* Showroom Features Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div className="bg-slate-950/60 border border-slate-800/80 hover:border-blue-500/40 rounded-2xl p-3.5 transition duration-200 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center flex-shrink-0 text-blue-400">
+                    <Tv className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">شاشات وتلفزيونات 4K</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      تتبع السيريالات وضمان الوكلاء المعتمدين (سامسونج، إل جي، توشيبا).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/60 border border-slate-800/80 hover:border-cyan-500/40 rounded-2xl p-3.5 transition duration-200 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center flex-shrink-0 text-cyan-400">
+                    <Wind className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">تكييفات وثلاجات إنفرتر</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      إدارة المخزون متعدد الفروع والتحويلات وأذون الصرف اللحظية.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/60 border border-slate-800/80 hover:border-amber-500/40 rounded-2xl p-3.5 transition duration-200 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0 text-amber-400">
+                    <CreditCard className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">كاش وبالتقسيط المريح</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      تقسيط مباشر بعقود وإيصالات أمانة، وتمويل (فاليو، كونتاكت، سهولة).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/60 border border-slate-800/80 hover:border-emerald-500/40 rounded-2xl p-3.5 transition duration-200 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center flex-shrink-0 text-emerald-400">
+                    <Barcode className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">نقاط بيع سريعة (POS)</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      إصدار فواتير حرارية وكبيرة، وتقفيل ورديات الكاشير والدرج (Z-Report).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fast Account Selector for Easy Demo & Quick Switch */}
+              <div className="pt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-blue-400" />
+                    <span>اختيار سريع لحسابات النظام والتجربة:</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500">اضغط لتعبئة الحساب</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {quickAccounts.map((acc) => {
+                    const isSelected = selectedQuickRole === acc.username;
+                    return (
+                      <button
+                        key={acc.username}
+                        type="button"
+                        onClick={() => handleSelectQuickAccount(acc)}
+                        className={`text-right px-2.5 py-1.5 rounded-xl border text-[11px] transition-all cursor-pointer flex items-center gap-2 ${
+                          isSelected 
+                            ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-900/50 scale-102 font-bold' 
+                            : `${acc.color} hover:bg-white/10 hover:border-white/30`
+                        }`}
+                      >
+                        <span className="font-bold">{acc.label}</span>
+                        <span className="text-[9.5px] opacity-75 font-mono">({acc.username})</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-extrabold text-slate-700 mb-1.5">كلمة المرور *</label>
-              <div className="relative">
-                <div className="absolute right-3.5 top-3 text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl pr-10 pl-10 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition"
-                  dir="ltr"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+            {/* Bottom Warranty & Agency Trust Badge */}
+            <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+              <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                <span>ضمان معتمد للأجهزة</span>
+              </span>
+              <span className="text-slate-400 font-mono">
+                شارب • توشيبا • فريش • زانوسي • تورنيدو
+              </span>
             </div>
+          </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white font-black py-3 rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 mt-2"
-            >
-              <KeyRound className="w-4 h-4" />
-              <span>{loading ? 'جاري التحقق والمصادقة...' : 'دخول إلى النظام'}</span>
-            </button>
-          </form>
-
-          {/* Security Information Box */}
-          <div className="pt-3 border-t border-slate-200">
-            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-start gap-2.5 text-right">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <p className="text-[11px] font-bold text-slate-700">دخول آمن ومشفر للنظام</p>
-                <p className="text-[10px] text-slate-500 leading-relaxed">
-                  يرجى كتابة اسم المستخدم وكلمة المرور الخاصة بك يدوياً. جميع عمليات الدخول مسجلة في سجل الرقابة وتتبع النشاط.
+          {/* Left Form Column (Authentication Card) */}
+          <div className="lg:col-span-6 flex flex-col justify-center">
+            <div className="bg-slate-900/95 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl shadow-black/80 backdrop-blur-xl relative">
+              
+              {/* Form Header */}
+              <div className="mb-6">
+                <div className="inline-flex p-3 rounded-2xl bg-blue-600/15 border border-blue-500/30 text-blue-400 mb-3 shadow-inner">
+                  <KeyRound className="w-6 h-6" />
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-white">تسجيل الدخول للمنظومة</h2>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium leading-relaxed">
+                  أدخل بيانات الاعتماد الخاصة بك للوصول إلى لوحة المبيعات وإدارة المعرض
                 </p>
               </div>
+
+              {/* Error Alert */}
+              {error && (
+                <div className="mb-5 bg-rose-950/60 border border-rose-500/50 rounded-2xl p-3.5 text-xs text-rose-200 font-bold flex items-center gap-2.5 animate-shake shadow-lg shadow-rose-950/30">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400" />
+                  <span className="leading-relaxed">{error}</span>
+                </div>
+              )}
+
+              {/* Form Elements */}
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-300 mb-1.5">
+                    اسم المستخدم (Username)
+                  </label>
+                  <div className="relative">
+                    <div className="absolute right-3.5 top-3.5 text-slate-400">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      autoFocus
+                      placeholder="admin, cashier1, store1..."
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="w-full bg-slate-950/80 border border-slate-700/80 hover:border-slate-600 focus:border-blue-500 rounded-xl pr-10 pl-3 py-3 text-xs sm:text-sm font-bold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition duration-150"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-extrabold text-slate-300">
+                      كلمة المرور (Password)
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute right-3.5 top-3.5 text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-slate-950/80 border border-slate-700/80 hover:border-slate-600 focus:border-blue-500 rounded-xl pr-10 pl-10 py-3 text-xs sm:text-sm font-bold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition duration-150"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute left-3.5 top-3.5 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                      title={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remember Me Checkbox */}
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 font-medium select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="w-4 h-4 rounded text-blue-600 bg-slate-950 border-slate-700 focus:ring-blue-500 focus:ring-offset-slate-900 cursor-pointer"
+                    />
+                    <span>تذكر اسم المستخدم على هذا الجهاز</span>
+                  </label>
+                  <span className="text-[11px] text-blue-400 font-medium">
+                    تسجيل دخول مشفر
+                  </span>
+                </div>
+
+                {/* Submit CTA Button */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full mt-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:via-indigo-500 hover:to-blue-600 text-white font-black py-3.5 rounded-xl text-xs sm:text-sm shadow-xl shadow-blue-600/30 transition-all duration-200 cursor-pointer flex items-center justify-center gap-2.5 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <span>جاري التحقق والمصادقة الأمنية...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>دخول إلى المنظومة</span>
+                      <ArrowRight className="w-4 h-4 transform rotate-180" />
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Security & Audit Verification Note */}
+              <div className="mt-6 pt-5 border-t border-slate-800 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0 text-emerald-400 mt-0.5">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div className="space-y-0.5">
+                  <h5 className="text-xs font-bold text-slate-200">جلسة عمل موثوقة ومحمية</h5>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    يتم تسجيل كافة الأنشطة والمبيعات في سجل الرقابة والتدقيق (Audit Trail) مع كشف الصلاحيات حسب دور المستخدم.
+                  </p>
+                </div>
+              </div>
+
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Footer System Info */}
-      <footer className="text-center text-xs text-slate-500 py-4">
-        <p className="font-bold text-slate-400">{storeName} &copy; 2026</p>
-        <p className="text-[11px] text-slate-600 mt-0.5">
-          منظومة إدارة المعارض، نقاط البيع، المخازن والمراجعة المالية • إصدار معتمد v3.1.0
-        </p>
+        </div>
+      </main>
+
+      {/* Global Footer */}
+      <footer className="relative z-10 w-full border-t border-slate-900 bg-slate-950/80 backdrop-blur-sm py-4 px-4 text-center text-xs text-slate-500">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-[11.5px]">
+          <p className="font-semibold text-slate-400">
+            {storeName} &copy; 2026 • جميع الحقوق محفوظة
+          </p>
+          <p className="text-slate-500">
+            منظومة إدارة معارض الأجهزة الكهربائية والتقسيط الذكية • إصدار معتمد <span className="font-mono text-blue-400 font-bold">v3.1.0</span>
+          </p>
+        </div>
       </footer>
     </div>
   );
