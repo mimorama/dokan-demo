@@ -15,7 +15,8 @@ import {
   Sparkles,
   ArrowRight,
   Clock,
-  Users
+  Building2,
+  Shield
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -30,7 +31,6 @@ export default function LoginScreen({ settings, onLoginSuccess }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedQuickRole, setSelectedQuickRole] = useState(null);
 
   const [currentTime, setCurrentTime] = useState('');
 
@@ -58,21 +58,6 @@ export default function LoginScreen({ settings, onLoginSuccess }) {
   const storeName = settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية';
   const tagline = settings?.tagline || 'ثلاجات • غسالات • شاشات • تكييفات • كاش وبالتقسيط المريح';
   const logoUrl = settings?.logo_url || '/logo.png';
-
-  const quickAccounts = [
-    { username: 'admin', pass: '123', label: 'المدير العام', role: 'إدارة كاملة', color: 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 hover:border-amber-400' },
-    { username: 'cashier1', pass: '123', label: 'كاشير ومبيعات', role: 'نقطة البيع POS', color: 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400' },
-    { username: 'faisal_mgr', pass: '123', label: 'مدير فرع فيصل', role: 'إدارة الفرع', color: 'bg-blue-50 text-blue-900 border-blue-300 hover:bg-blue-100 hover:border-blue-400' },
-    { username: 'store1', pass: '123', label: 'أمين المستودع', role: 'المخازن والتحويلات', color: 'bg-purple-50 text-purple-900 border-purple-300 hover:bg-purple-100 hover:border-purple-400' },
-    { username: 'accountant1', pass: '123', label: 'مراجع الحسابات', role: 'المالية والخزينة', color: 'bg-cyan-50 text-cyan-900 border-cyan-300 hover:bg-cyan-100 hover:border-cyan-400' },
-  ];
-
-  const handleSelectQuickAccount = (acc) => {
-    setUsername(acc.username);
-    setPassword(acc.pass);
-    setSelectedQuickRole(acc.username);
-    setError('');
-  };
 
   const handleLogin = async (e) => {
     e?.preventDefault();
@@ -228,34 +213,31 @@ export default function LoginScreen({ settings, onLoginSuccess }) {
                 </div>
               </div>
 
-              {/* Fast Account Selector for Easy Demo & Quick Switch in Light Theme */}
+              {/* Showroom Services & Trust Highlights */}
               <div className="pt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-blue-600" />
-                    <span>اختيار سريع لحسابات النظام والتجربة:</span>
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-medium">اضغط لتعبئة الحساب</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {quickAccounts.map((acc) => {
-                    const isSelected = selectedQuickRole === acc.username;
-                    return (
-                      <button
-                        key={acc.username}
-                        type="button"
-                        onClick={() => handleSelectQuickAccount(acc)}
-                        className={`text-right px-2.5 py-1.5 rounded-xl border text-[11px] transition-all cursor-pointer flex items-center gap-2 ${
-                          isSelected 
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25 scale-102 font-bold' 
-                            : `${acc.color} shadow-2xs`
-                        }`}
-                      >
-                        <span className="font-bold">{acc.label}</span>
-                        <span className="text-[9.5px] opacity-75 font-mono">({acc.username})</span>
-                      </button>
-                    );
-                  })}
+                <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/60 to-slate-50 border border-blue-100 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center gap-2 mb-2.5 text-xs font-black text-blue-900">
+                    <Building2 className="w-4 h-4 text-blue-600" />
+                    <span>أنظمة وخدمات المعرض المركزية:</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px] text-slate-700 font-medium">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
+                      <span>ربط شبكي بين الفروع والمخازن</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>
+                      <span>سجل رقابة وتدقيق مالي معتمد</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0"></span>
+                      <span>إدارة عقود التقسيط وإيصالات الأمانة</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"></span>
+                      <span>تتبع السيريالات وخدمات ما بعد البيع</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
