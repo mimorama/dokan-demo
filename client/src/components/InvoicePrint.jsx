@@ -499,7 +499,7 @@ ${publicLink}
 
               {/* Customer Information Bar */}
               <div className="bg-slate-50 border border-slate-300 rounded-lg p-2 mb-2.5 text-[11px]">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div>
                     <span className="text-slate-500 block text-[9.5px] font-semibold">اسم العميل:</span>
                     <span className="font-extrabold text-slate-900 text-xs block truncate">{currentSale.customer_name || 'عميل نقدي'}</span>
@@ -509,12 +509,14 @@ ${publicLink}
                     <span className="font-bold font-mono text-slate-900 block" dir="ltr">{currentSale.customer_phone || '---'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[9.5px] font-semibold">الرقم القومي:</span>
-                    <span className="font-bold font-mono text-slate-800 block" dir="ltr">{currentSale.customer_national_id || 'غير مسجل'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[9.5px] font-semibold">العنوان:</span>
-                    <span className="font-bold text-slate-800 block truncate">{currentSale.customer_address || currentSale.branch_address || '---'}</span>
+                    <span className="text-slate-500 block text-[9.5px] font-semibold">طريقة السداد:</span>
+                    <span className="font-bold text-slate-800 block">
+                      {currentSale.sale_type === 'finance_company'
+                        ? `تقسيط شركة (${currentSale.finance_company_name || 'تمويل'})`
+                        : currentSale.sale_type === 'installment'
+                        ? 'تقسيط معرض مباشر'
+                        : 'سداد نقدي (كاش)'}
+                    </span>
                   </div>
                 </div>
               </div>
