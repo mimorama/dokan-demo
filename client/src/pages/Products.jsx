@@ -16,10 +16,19 @@ import {
   Tags,
   CheckSquare,
   Square,
-  FolderPlus
+  FolderPlus,
+  FileSpreadsheet,
+  FileDown,
+  FileUp,
+  Download,
+  Upload,
+  Info,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import { api } from '../api';
 import BarcodeLabelModal from '../components/BarcodeLabelModal';
+import { exportToExcel, readExcelFile, downloadProductsTemplate } from '../utils/excel';
 
 export default function Products({ settings }) {
   const [products, setProducts] = useState([]);
@@ -29,6 +38,14 @@ export default function Products({ settings }) {
   const [selectedBrand, setSelectedBrand] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Excel Import/Export State
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importRows, setImportRows] = useState([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [importSuccessMsg, setImportSuccessMsg] = useState('');
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -282,6 +299,88 @@ export default function Products({ settings }) {
     }
   };
 
+  // Export current products to Excel
+  const handleExportExcel = () => {
+    try {
+      if (!products || products.length === 0) {
+        alert('لا توجد أجهزة أو أصناف متاحة للتصدير حالياً');
+        return;
+      }
+      const dataToExport = products.map(p => ({
+        'اسم الجهاز': p.name || '',
+        'الموديل': p.model_number || '',
+        'الباركود': p.barcode || '',
+        'القسم / الفئة': p.category_name || '',
+        'الماركة': p.brand_name || '',
+        'سعر التكلفة': Number(p.cost_price) || 0,
+        'سعر الكاش': Number(p.cash_price) || 0,
+        'سعر التقسيط': Number(p.installment_price) || 0,
+        'الرصيد المتاح': Number(p.in_stock_count) || 0,
+        'الكمية المباعة': Number(p.sold_count) || 0,
+        'مدة الضمان (شهور)': Number(p.warranty_months) || 0,
+        'شركة الضمان': p.warranty_agency || '',
+        'حد النواقص الأدنى': Number(p.alert_quantity) || 2,
+        'المواصفات الفنية': p.specifications || ''
+      }));
+
+      exportToExcel({
+        data: dataToExport,
+        filename: `قائمة_الأجهزة_والأصناف_دكان_عبدالعزيز_${new Date().toISOString().slice(0, 10)}`,
+        sheetName: 'الأجهزة_والأصناف'
+      });
+    } catch (err) {
+      alert(err.message || 'خطأ أثناء تصدير ملف Excel');
+    }
+  };
+
+  // Read uploaded Excel file
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError('');
+    setImportSuccessMsg('');
+    setImportFileName(file.name);
+    try {
+      setImportLoading(true);
+      const rows = await readExcelFile(file);
+      if (!rows || rows.length === 0) {
+        throw new Error('الملف فارغ أو لا يحتوي على صفوف صالحة');
+      }
+      setImportRows(rows);
+    } catch (err) {
+      setImportError(err.message || 'فشل قراءة ملف Excel');
+      setImportRows([]);
+    } finally {
+      setImportLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  // Confirm import and send to server
+  const handleConfirmImport = async () => {
+    if (!importRows || importRows.length === 0) {
+      alert('الرجاء اختيار ملف Excel يحتوي على بيانات أولاً');
+      return;
+    }
+    try {
+      setImportLoading(true);
+      setImportError('');
+      const res = await api.bulkImportProducts(importRows);
+      setImportSuccessMsg(res.message || `تم استيراد ${res.count} صنف بنجاح`);
+      setTimeout(() => {
+        setShowImportModal(false);
+        setImportRows([]);
+        setImportFileName('');
+        setImportSuccessMsg('');
+        loadData();
+      }, 1500);
+    } catch (err) {
+      setImportError(err.message || 'خطأ أثناء استيراد البيانات إلى النظام');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header & Quick Actions */}
@@ -296,32 +395,60 @@ export default function Products({ settings }) {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+          {/* Export Excel Button */}
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-98"
+            title="تصدير جميع الأصناف المعروضة حالياً إلى ملف Excel"
+          >
+            <FileDown className="w-4 h-4 text-emerald-100" />
+            <span>تصدير Excel</span>
+          </button>
+
+          {/* Import Excel Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setImportRows([]);
+              setImportError('');
+              setImportSuccessMsg('');
+              setImportFileName('');
+              setShowImportModal(true);
+            }}
+            className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-98"
+            title="استيراد أصناف وأجهزة من ملف Excel جاهز"
+          >
+            <FileUp className="w-4 h-4 text-teal-100" />
+            <span>استيراد Excel</span>
+          </button>
+
           <button
             type="button"
             onClick={handleOpenAddCategoryModal}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
           >
             <FolderPlus className="w-4 h-4 text-indigo-200" />
-            <span>إضافة تصنيف جديد</span>
+            <span>إضافة تصنيف</span>
           </button>
 
           <button
             type="button"
             onClick={handleOpenAddBrandModal}
-            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
           >
             <Building2 className="w-4 h-4 text-amber-400" />
-            <span>إضافة ماركة جديدة</span>
+            <span>إضافة ماركة</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleOpenAddModal()}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 active:scale-98"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-98"
           >
             <Plus className="w-4 h-4" />
-            <span>إضافة صنف / جهاز جديد</span>
+            <span>إضافة جهاز جديد</span>
           </button>
         </div>
       </div>
@@ -924,6 +1051,179 @@ export default function Products({ settings }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Excel Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl p-6 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center">
+                  <FileSpreadsheet className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">
+                    استيراد الأصناف والأجهزة من ملف Excel (XLSX)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    إضافة جماعية أو تحديث لبيانات الأجهزة والأسعار والضمان بضغطة واحدة
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Template Download Banner */}
+            <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-3 text-xs text-slate-600">
+                <Info className="w-5 h-5 text-blue-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-slate-800">هل تحتاج نموذج إكسيل جاهز؟</div>
+                  <div className="text-[11px] text-slate-500">قم بتحميل نموذج بالأعمدة والبيانات المطلوبة لملء أصنافك بكل سهولة.</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={downloadProductsTemplate}
+                className="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2 shrink-0 active:scale-98"
+              >
+                <Download className="w-4 h-4 text-teal-600" />
+                <span>تحميل نموذج Excel فارغ</span>
+              </button>
+            </div>
+
+            {/* Error & Success Messages */}
+            {importError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{importError}</span>
+              </div>
+            )}
+            {importSuccessMsg && (
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <span>{importSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* File Upload Zone */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700">
+                اختر ملف Excel (.xlsx أو .xls):
+              </label>
+              <div className="border-2 border-dashed border-slate-300 hover:border-teal-500 bg-slate-50/50 rounded-2xl p-6 text-center transition-colors">
+                <input
+                  type="file"
+                  id="excelFileInput"
+                  accept=".xlsx, .xls"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  disabled={importLoading}
+                />
+                <label htmlFor="excelFileInput" className="cursor-pointer flex flex-col items-center justify-center gap-2">
+                  <div className="w-12 h-12 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center">
+                    <Upload className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-teal-600 hover:underline">اضغط لاختيار ملف من جهازك</span>
+                    <span className="text-xs text-slate-500 block mt-1">صيغ الملفات المدعومة: XLSX, XLS</span>
+                  </div>
+                  {importFileName && (
+                    <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-white border border-teal-200 text-teal-700 text-xs font-semibold rounded-lg">
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>{importFileName}</span>
+                    </div>
+                  )}
+                </label>
+              </div>
+            </div>
+
+            {/* Parsed Preview Table */}
+            {importRows.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-slate-800">
+                    معاينة البيانات المستخرجة ({importRows.length} صنف / جهاز):
+                  </span>
+                  <span className="text-slate-500 text-[11px]">
+                    سيتم عرض أول 5 أصناف للمعاينة السريعة
+                  </span>
+                </div>
+                <div className="max-h-48 overflow-x-auto overflow-y-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0">
+                      <tr>
+                        <th className="p-2.5">#</th>
+                        <th className="p-2.5">اسم الجهاز</th>
+                        <th className="p-2.5">الموديل</th>
+                        <th className="p-2.5">الباركود</th>
+                        <th className="p-2.5">سعر الكاش</th>
+                        <th className="p-2.5">الكمية</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {importRows.slice(0, 5).map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-2 text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="p-2 font-bold text-slate-800">
+                            {row['اسم الجهاز *'] || row['اسم الجهاز'] || row['اسم الصنف'] || row.name || '—'}
+                          </td>
+                          <td className="p-2 font-mono text-slate-600">
+                            {row['الموديل'] || row['رقم الموديل'] || row.model_number || '—'}
+                          </td>
+                          <td className="p-2 font-mono text-slate-600">
+                            {row['الباركود'] || row['باركود'] || row.barcode || '—'}
+                          </td>
+                          <td className="p-2 font-bold text-emerald-600">
+                            {Number(row['سعر الكاش'] || row['سعر البيع'] || row.cash_price || 0).toLocaleString()} {currency}
+                          </td>
+                          <td className="p-2 font-bold text-blue-600">
+                            {row['الرصيد / الكمية الأولية'] || row['الكمية'] || row.initial_quantity || 0}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                disabled={importLoading}
+                className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-xs cursor-pointer transition-colors"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmImport}
+                disabled={importLoading || importRows.length === 0}
+                className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-md cursor-pointer transition-all flex items-center gap-2 active:scale-98"
+              >
+                {importLoading ? (
+                  <span>جاري الاستيراد والحفظ...</span>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>تأكيد استيراد ({importRows.length}) جهاز الآن</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

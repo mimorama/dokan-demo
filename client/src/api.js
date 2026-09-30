@@ -57,6 +57,7 @@ export const api = {
   updateProduct: (id, data) => fetchApi(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteProduct: (id) => fetchApi(`/products/${id}`, { method: 'DELETE' }),
   getAvailableSerials: (productId) => fetchApi(`/products/${productId}/available-serials`),
+  bulkImportProducts: (products) => fetchApi('/products/bulk', { method: 'POST', body: JSON.stringify(products) }),
 
   // Serials & Warranty
   getSerials: (params = '') => fetchApi(`/serials${params ? '?' + params : ''}`),
@@ -98,6 +99,7 @@ export const api = {
   createSupplier: (data) => fetchApi('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
   updateSupplier: (id, data) => fetchApi(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteSupplier: (id) => fetchApi(`/suppliers/${id}`, { method: 'DELETE' }),
+  bulkImportSuppliers: (suppliers) => fetchApi('/suppliers/bulk', { method: 'POST', body: JSON.stringify(suppliers) }),
 
   // Cashbox & Expenses
   getCashbox: () => fetchApi('/cashbox'),

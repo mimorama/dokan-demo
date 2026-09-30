@@ -469,6 +469,181 @@ router.post('/products', (req, res) => {
   }
 });
 
+// Bulk Import Products from Excel / JSON
+router.post('/products/bulk', (req, res) => {
+  try {
+    const rawList = Array.isArray(req.body) ? req.body : (req.body.products || []);
+    if (!rawList || rawList.length === 0) {
+      return res.status(400).json({ error: 'لم يتم إرسال أي أصناف للاستيراد' });
+    }
+
+    const defaultWh = db.prepare('SELECT id FROM warehouses WHERE is_default = 1 LIMIT 1').get() 
+      || db.prepare('SELECT id FROM warehouses LIMIT 1').get();
+    const warehouseId = defaultWh ? defaultWh.id : null;
+
+    let inserted = 0;
+    let updated = 0;
+    let errors = [];
+
+    const bulkTx = db.transaction(() => {
+      for (let i = 0; i < rawList.length; i++) {
+        const item = rawList[i];
+        const name = (item.name || item['اسم الجهاز *'] || item['اسم الجهاز'] || item['اسم الصنف'] || '').trim();
+        if (!name) {
+          errors.push(`الصف رقم ${i + 1}: اسم الجهاز مطلوب`);
+          continue;
+        }
+
+        const model_number = (item.model_number || item['الموديل'] || item['رقم الموديل'] || '').trim();
+        const barcode = (item.barcode || item['الباركود'] || item['باركود'] || '').trim();
+        const specifications = (item.specifications || item['المواصفات الفنية'] || item['المواصفات'] || '').trim();
+        const cost_price = Number(item.cost_price ?? item['سعر التكلفة'] ?? item['التكلفة']) || 0;
+        const cash_price = Number(item.cash_price ?? item['سعر الكاش'] ?? item['سعر البيع'] ?? item['سعر البيع كاش']) || 0;
+        const installment_price = Number(item.installment_price ?? item['سعر التقسيط'] ?? item['سعر بيع التقسيط']) || 0;
+        const warranty_months = Number(item.warranty_months ?? item['مدة الضمان بالشهور'] ?? item['مدة الضمان'] ?? item['الضمان']) || 12;
+        const warranty_agency = (item.warranty_agency || item['شركة الضمان والصيانة'] || item['وكيل الضمان'] || item['شركة الضمان'] || '').trim();
+        const alert_quantity = Number(item.alert_quantity ?? item['حد النواقص الأدنى'] ?? item['حد الطلب'] ?? item['حد النواقص']) || 2;
+        const initial_quantity = Number(item.initial_quantity ?? item['الرصيد / الكمية الأولية'] ?? item['الكمية الأولية'] ?? item['الكمية'] ?? item['الرصيد']) || 0;
+        const rawSerials = item.serials || item['السيريالات'] || item['الأرقام التسلسلية'] || item['سيريالات'] || item.initial_serials || '';
+
+        // Category resolution
+        let category_id = item.category_id || null;
+        const categoryName = (item.category_name || item['القسم / الفئة'] || item['القسم'] || item['التصنيف'] || '').trim();
+        if (!category_id && categoryName) {
+          let cat = db.prepare('SELECT id FROM categories WHERE name = ? COLLATE NOCASE').get(categoryName);
+          if (!cat) {
+            const insCat = db.prepare('INSERT INTO categories (name, description, icon) VALUES (?, ?, ?)').run(categoryName, 'تمت الإضافة تلقائياً عبر استيراد Excel', 'Package');
+            category_id = insCat.lastInsertRowid;
+          } else {
+            category_id = cat.id;
+          }
+        }
+
+        // Brand resolution
+        let brand_id = item.brand_id || null;
+        const brandName = (item.brand_name || item['الماركة'] || item['الماركة التجارية'] || item['البراند'] || '').trim();
+        if (!brand_id && brandName) {
+          let brnd = db.prepare('SELECT id FROM brands WHERE name = ? COLLATE NOCASE').get(brandName);
+          if (!brnd) {
+            const insBrnd = db.prepare('INSERT INTO brands (name, country, agent_name, agent_phone) VALUES (?, ?, ?, ?)').run(brandName, 'مصر', warranty_agency || '', '');
+            brand_id = insBrnd.lastInsertRowid;
+          } else {
+            brand_id = brnd.id;
+          }
+        }
+
+        // Find existing product by barcode, or name + model, or name
+        let existing = null;
+        if (barcode) {
+          existing = db.prepare('SELECT id FROM products WHERE barcode = ?').get(barcode);
+        }
+        if (!existing && name && model_number) {
+          existing = db.prepare('SELECT id FROM products WHERE name = ? AND model_number = ?').get(name, model_number);
+        }
+        if (!existing && name) {
+          existing = db.prepare('SELECT id FROM products WHERE name = ?').get(name);
+        }
+
+        let productId;
+        if (existing) {
+          productId = existing.id;
+          db.prepare(`
+            UPDATE products SET
+              category_id = COALESCE(?, category_id),
+              brand_id = COALESCE(?, brand_id),
+              model_number = CASE WHEN ? != '' THEN ? ELSE model_number END,
+              barcode = CASE WHEN ? != '' THEN ? ELSE barcode END,
+              specifications = CASE WHEN ? != '' THEN ? ELSE specifications END,
+              cost_price = CASE WHEN ? > 0 THEN ? ELSE cost_price END,
+              cash_price = CASE WHEN ? > 0 THEN ? ELSE cash_price END,
+              installment_price = CASE WHEN ? > 0 THEN ? ELSE installment_price END,
+              warranty_months = CASE WHEN ? > 0 THEN ? ELSE warranty_months END,
+              warranty_agency = CASE WHEN ? != '' THEN ? ELSE warranty_agency END,
+              alert_quantity = CASE WHEN ? > 0 THEN ? ELSE alert_quantity END
+            WHERE id = ?
+          `).run(
+            category_id,
+            brand_id,
+            model_number, model_number,
+            barcode, barcode,
+            specifications, specifications,
+            cost_price, cost_price,
+            cash_price, cash_price,
+            installment_price, installment_price,
+            warranty_months, warranty_months,
+            warranty_agency, warranty_agency,
+            alert_quantity, alert_quantity,
+            productId
+          );
+          updated++;
+        } else {
+          const ins = db.prepare(`
+            INSERT INTO products (
+              category_id, brand_id, name, model_number, barcode, specifications,
+              cost_price, cash_price, installment_price, warranty_months, warranty_agency, alert_quantity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            category_id, brand_id, name, model_number, barcode, specifications,
+            cost_price, cash_price, installment_price, warranty_months, warranty_agency, alert_quantity
+          );
+          productId = ins.lastInsertRowid;
+          inserted++;
+        }
+
+        // Handle Serials / Stock quantity
+        let serialList = [];
+        if (Array.isArray(rawSerials)) {
+          serialList = rawSerials.map(s => String(s).trim()).filter(Boolean);
+        } else if (typeof rawSerials === 'string' && rawSerials.trim()) {
+          serialList = rawSerials.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+        }
+
+        // If no explicit serials provided, but initial_quantity > 0
+        if (serialList.length === 0 && initial_quantity > 0) {
+          const prefix = barcode ? barcode.slice(-6) : `PRD${productId}`;
+          const timestamp = Date.now().toString(36).toUpperCase();
+          for (let q = 1; q <= initial_quantity; q++) {
+            const rand = Math.floor(100 + Math.random() * 900);
+            serialList.push(`${prefix}-${timestamp}-${q}${rand}`);
+          }
+        }
+
+        if (serialList.length > 0) {
+          const insertSerial = db.prepare(`
+            INSERT OR IGNORE INTO product_serials (product_id, serial_number, status, cost_price, warehouse_id)
+            VALUES (?, ?, 'in_stock', ?, ?)
+          `);
+          for (const s of serialList) {
+            insertSerial.run(productId, s, cost_price, warehouseId);
+          }
+        }
+      }
+    });
+
+    bulkTx();
+
+    logActivity(
+      req, 
+      'PRODUCTS_BULK_IMPORT', 
+      'product', 
+      null, 
+      `استيراد جماعي لـ ${rawList.length} صنف/جهاز من ملف Excel (إضافة: ${inserted}، تحديث: ${updated})`, 
+      { count: rawList.length, inserted, updated, errors }
+    );
+
+    res.json({
+      success: true,
+      count: rawList.length,
+      inserted,
+      updated,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `تم استيراد ${inserted + updated} صنف بنجاح (إضافة جديدة: ${inserted}، تحديث: ${updated})`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/products/:id', (req, res) => {
   try {
     const {
@@ -1612,6 +1787,97 @@ router.delete('/suppliers/:id', (req, res) => {
     db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
     logActivity(req, 'SUPPLIER_DELETED', 'supplier', req.params.id, `حذف المورد: ${s.name}`, s);
     res.json({ success: true, message: 'تم حذف المورد بنجاح' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk Import Suppliers from Excel / JSON
+router.post('/suppliers/bulk', (req, res) => {
+  try {
+    const rawList = Array.isArray(req.body) ? req.body : (req.body.suppliers || []);
+    if (!rawList || rawList.length === 0) {
+      return res.status(400).json({ error: 'لم يتم إرسال أي موردين للاستيراد' });
+    }
+
+    let inserted = 0;
+    let updated = 0;
+    let errors = [];
+
+    const bulkTx = db.transaction(() => {
+      for (let i = 0; i < rawList.length; i++) {
+        const item = rawList[i];
+        const name = (item.name || item['اسم المورد / المسؤول *'] || item['اسم المورد'] || item['اسم المسؤول'] || item['اسم الشركة'] || '').trim();
+        if (!name) {
+          errors.push(`الصف رقم ${i + 1}: اسم المورد مطلوب`);
+          continue;
+        }
+
+        const company = (item.company || item['اسم الشركة الموزعة'] || item['الشركة'] || item['اسم الشركة'] || '').trim();
+        const phone = (item.phone || item['رقم الهاتف *'] || item['رقم الهاتف'] || item['الهاتف'] || item['الموبايل'] || '').trim();
+        const phone2 = (item.phone2 || item['رقم هاتف إضافي'] || item['هاتف آخر'] || item['الهاتف الثاني'] || '').trim();
+        const address = (item.address || item['العنوان / المقر'] || item['العنوان'] || '').trim();
+        const balance = Number(item.balance ?? item['الرصيد المالي الحالي'] ?? item['الرصيد الحالي'] ?? item['الرصيد'] ?? item['الرصيد المالي']) || 0;
+        const notes = (item.notes || item['ملاحظات'] || item['الملاحظات'] || '').trim();
+
+        // Check if supplier exists by phone or name
+        let existing = null;
+        if (phone) {
+          existing = db.prepare('SELECT id FROM suppliers WHERE phone = ?').get(phone);
+        }
+        if (!existing && name) {
+          existing = db.prepare('SELECT id FROM suppliers WHERE name = ?').get(name);
+        }
+
+        if (existing) {
+          db.prepare(`
+            UPDATE suppliers SET
+              company = CASE WHEN ? != '' THEN ? ELSE company END,
+              phone = CASE WHEN ? != '' THEN ? ELSE phone END,
+              phone2 = CASE WHEN ? != '' THEN ? ELSE phone2 END,
+              address = CASE WHEN ? != '' THEN ? ELSE address END,
+              balance = ?,
+              notes = CASE WHEN ? != '' THEN ? ELSE notes END
+            WHERE id = ?
+          `).run(
+            company, company,
+            phone, phone,
+            phone2, phone2,
+            address, address,
+            balance,
+            notes, notes,
+            existing.id
+          );
+          updated++;
+        } else {
+          db.prepare(`
+            INSERT INTO suppliers (name, company, phone, phone2, address, balance, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(name, company, phone, phone2, address, balance, notes);
+          inserted++;
+        }
+      }
+    });
+
+    bulkTx();
+
+    logActivity(
+      req,
+      'SUPPLIERS_BULK_IMPORT',
+      'supplier',
+      null,
+      `استيراد جماعي لـ ${rawList.length} مورد من ملف Excel (إضافة: ${inserted}، تحديث: ${updated})`,
+      { count: rawList.length, inserted, updated, errors }
+    );
+
+    res.json({
+      success: true,
+      count: rawList.length,
+      inserted,
+      updated,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `تم استيراد ${inserted + updated} مورد بنجاح (إضافة جديدة: ${inserted}، تحديث: ${updated})`
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
