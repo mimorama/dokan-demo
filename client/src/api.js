@@ -92,6 +92,7 @@ export const api = {
   updateWarehouse: (id, data) => fetchApi(`/warehouses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   getWarehouseSerials: (warehouseId) => fetchApi(`/warehouses/${warehouseId}/serials`),
   getStockTransfers: () => fetchApi('/transfers/stock'),
+  getStockTransfer: (id) => fetchApi(`/transfers/stock/${id}`),
   transferStock: (data) => fetchApi('/transfers/stock', { method: 'POST', body: JSON.stringify(data) }),
 
   // Suppliers
@@ -192,7 +193,14 @@ export const api = {
 
   // Outlet & Dead Stock
   getDeadStock: () => fetchApi('/inventory/dead-stock'),
-  getOutletProducts: () => fetchApi('/products/outlet')
+  getOutletProducts: () => fetchApi('/products/outlet'),
+
+  // Branch & Warehouse Notifications
+  getNotifications: (params = '') => fetchApi(`/notifications${params ? '?' + params : ''}`),
+  markNotificationRead: (id) => fetchApi(`/notifications/${id}/read`, { method: 'PUT' }),
+  markAllNotificationsRead: () => fetchApi('/notifications/read-all', { method: 'PUT' }),
+  deleteNotification: (id) => fetchApi(`/notifications/${id}`, { method: 'DELETE' }),
+  clearReadNotifications: () => fetchApi('/notifications/clear-read', { method: 'DELETE' })
 };
 
 

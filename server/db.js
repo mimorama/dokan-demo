@@ -359,6 +359,23 @@ function initDb() {
       notes TEXT
     );
 
+    -- الإشعارات والتنبيهات المتبادلة بين الفروع والمخازن والتحويلات
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL, -- 'stock_transfer', 'stock_request', 'low_stock', 'system'
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      entity_type TEXT, -- 'stock_transfer', 'stock_request', 'product', 'branch'
+      entity_id INTEGER,
+      from_branch_id INTEGER REFERENCES branches(id),
+      to_branch_id INTEGER REFERENCES branches(id),
+      from_warehouse_id INTEGER REFERENCES warehouses(id),
+      to_warehouse_id INTEGER REFERENCES warehouses(id),
+      urgency TEXT DEFAULT 'normal', -- 'normal', 'urgent', 'critical'
+      is_read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- 1. ورديات الكاشير وتقفيل الدرج اليومي (Z-Report)
     CREATE TABLE IF NOT EXISTS cashier_shifts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

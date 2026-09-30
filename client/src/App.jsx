@@ -11,6 +11,7 @@ import UsersModal from './components/UsersModal';
 import ShiftModal from './components/ShiftModal';
 import ZReportPrint from './components/ZReportPrint';
 import ReturnModal from './components/ReturnModal';
+import TransferPrint from './components/TransferPrint';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -60,6 +61,7 @@ export default function App() {
   const [printableSale, setPrintableSale] = useState(null);
   const [printableContract, setPrintableContract] = useState(null);
   const [printableReceipt, setPrintableReceipt] = useState(null);
+  const [printableTransfer, setPrintableTransfer] = useState(null);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isUsersModalOpen, setIsUsersModalOpen] = useState(false);
@@ -135,6 +137,18 @@ export default function App() {
     }
   };
 
+  const handleViewTransferById = async (transferId) => {
+    try {
+      const transfer = await api.getStockTransfer(transferId);
+      if (transfer) {
+        setPrintableTransfer(transfer);
+      }
+    } catch (err) {
+      console.error('Failed to view transfer:', err);
+      setActiveTab('branches');
+    }
+  };
+
   const handleReturnSale = (sale) => {
     setSelectedSaleForReturn(sale);
     setIsReturnModalOpen(true);
@@ -203,6 +217,8 @@ export default function App() {
           onSwitchUser={() => setIsLoginModalOpen(true)}
           onLogout={handleLogout}
           onOpenUsersManagement={() => setActiveTab('users')}
+          onNavigateTab={(tab) => setActiveTab(tab)}
+          onViewTransfer={handleViewTransferById}
         />
 
         <main className="flex-1 p-6 sm:p-8 max-w-7xl w-full mx-auto">
@@ -260,6 +276,7 @@ export default function App() {
             <Branches
               settings={settings}
               currentUser={currentUser}
+              onPrintTransfer={(transfer) => setPrintableTransfer(transfer)}
             />
           )}
 
@@ -403,6 +420,15 @@ export default function App() {
           receiptData={printableReceipt}
           settings={settings}
           onClose={() => setPrintableReceipt(null)}
+        />
+      )}
+
+      {/* Printable Warehouse Stock Transfer Order */}
+      {printableTransfer && (
+        <TransferPrint
+          transfer={printableTransfer}
+          settings={settings}
+          onClose={() => setPrintableTransfer(null)}
         />
       )}
     </div>

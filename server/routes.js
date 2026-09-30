@@ -88,6 +88,23 @@ function logActivity(req, actionType, targetType, targetId, description, details
   }
 }
 
+// Branch & Warehouse Notifications System Helper
+function createNotification({ type, title, message, entity_type, entity_id, from_branch_id, to_branch_id, from_warehouse_id, to_warehouse_id, urgency = 'normal' }) {
+  try {
+    db.prepare(`
+      INSERT INTO notifications (type, title, message, entity_type, entity_id, from_branch_id, to_branch_id, from_warehouse_id, to_warehouse_id, urgency, is_read, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+    `).run(
+      type, title, message, entity_type || null, entity_id || null, 
+      from_branch_id || null, to_branch_id || null, 
+      from_warehouse_id || null, to_warehouse_id || null, 
+      urgency
+    );
+  } catch (e) {
+    console.error('Failed to create notification:', e);
+  }
+}
+
 // ==========================================
 // 1. DASHBOARD
 // ==========================================
@@ -2764,14 +2781,47 @@ router.get('/transfers/stock', (req, res) => {
 
     for (const t of transfers) {
       t.items = db.prepare(`
-        SELECT sti.*, p.name as product_name, p.model_number
+        SELECT sti.*, p.name as product_name, p.model_number, b.name as brand_name, c.name as category_name
         FROM stock_transfer_items sti
         JOIN products p ON sti.product_id = p.id
+        LEFT JOIN brands b ON p.brand_id = b.id
+        LEFT JOIN categories c ON p.category_id = c.id
         WHERE sti.transfer_id = ?
       `).all(t.id);
     }
 
     res.json(transfers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/transfers/stock/:id', (req, res) => {
+  try {
+    const t = db.prepare(`
+      SELECT st.*, 
+        wFrom.name as from_warehouse_name, bFrom.name as from_branch_name, bFrom.id as from_branch_id,
+        wTo.name as to_warehouse_name, bTo.name as to_branch_name, bTo.id as to_branch_id
+      FROM stock_transfers st
+      LEFT JOIN warehouses wFrom ON st.from_warehouse_id = wFrom.id
+      LEFT JOIN branches bFrom ON wFrom.branch_id = bFrom.id
+      LEFT JOIN warehouses wTo ON st.to_warehouse_id = wTo.id
+      LEFT JOIN branches bTo ON wTo.branch_id = bTo.id
+      WHERE st.id = ?
+    `).get(req.params.id);
+
+    if (!t) return res.status(404).json({ error: 'إذن التحويل غير موجود' });
+
+    t.items = db.prepare(`
+      SELECT sti.*, p.name as product_name, p.model_number, b.name as brand_name, c.name as category_name
+      FROM stock_transfer_items sti
+      JOIN products p ON sti.product_id = p.id
+      LEFT JOIN brands b ON p.brand_id = b.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE sti.transfer_id = ?
+    `).all(t.id);
+
+    res.json(t);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2838,6 +2888,24 @@ router.post('/transfers/stock', (req, res) => {
 
     const result = transferTx();
     logActivity(req, 'STOCK_TRANSFER_CREATED', 'stock_transfer', result.transferId, `إذن تحويل مخزني: ${result.transferNo} - عدد (${result.totalItems}) أجهزة`);
+
+    // Automatic Notification for target warehouse & branch
+    const wFrom = db.prepare('SELECT w.name, w.branch_id, b.name as branch_name FROM warehouses w LEFT JOIN branches b ON w.branch_id = b.id WHERE w.id = ?').get(from_warehouse_id);
+    const wTo = db.prepare('SELECT w.name, w.branch_id, b.name as branch_name FROM warehouses w LEFT JOIN branches b ON w.branch_id = b.id WHERE w.id = ?').get(to_warehouse_id);
+
+    createNotification({
+      type: 'stock_transfer',
+      title: `إذن تحويل بضائع جديد (${result.transferNo})`,
+      message: `تم إرسال تحويل مخزني (${result.totalItems} جهاز) من ${wFrom?.name || 'المخزن المصدر'} (${wFrom?.branch_name || ''}) إلى ${wTo?.name || 'المستودع المستلم'} (${wTo?.branch_name || ''}) بواسطة ${created_by || 'المسؤول'}`,
+      entity_type: 'stock_transfer',
+      entity_id: result.transferId,
+      from_branch_id: wFrom?.branch_id,
+      to_branch_id: wTo?.branch_id,
+      from_warehouse_id: Number(from_warehouse_id),
+      to_warehouse_id: Number(to_warehouse_id),
+      urgency: 'normal'
+    });
+
     res.json({ success: true, ...result, message: `تم تحويل ${result.totalItems} جهاز بنجاح` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2992,6 +3060,23 @@ router.put('/transfers/stock/:id', (req, res) => {
       `تعديل إذن التحويل المخزني: ${t.transfer_no} (إجمالي ${result.finalTotalItems} جهاز) بموافقة المدير: ${manager_name || 'إدارة المعرض'}`
     );
 
+    // Notification on Transfer Edit
+    const wFrom = db.prepare('SELECT w.name, w.branch_id, b.name as branch_name FROM warehouses w LEFT JOIN branches b ON w.branch_id = b.id WHERE w.id = ?').get(targetFromWarehouseId);
+    const wTo = db.prepare('SELECT w.name, w.branch_id, b.name as branch_name FROM warehouses w LEFT JOIN branches b ON w.branch_id = b.id WHERE w.id = ?').get(targetToWarehouseId);
+
+    createNotification({
+      type: 'stock_transfer',
+      title: `تعديل إذن تحويل (${t.transfer_no})`,
+      message: `تم تعديل بيانات إذن التحويل رقم ${t.transfer_no} ليصبح (${result.finalTotalItems} جهاز) من ${wFrom?.name || 'مخزن'} إلى ${wTo?.name || 'مخزن'} باعتماد المدير ${manager_name || 'إدارة المعرض'}`,
+      entity_type: 'stock_transfer',
+      entity_id: t.id,
+      from_branch_id: wFrom?.branch_id,
+      to_branch_id: wTo?.branch_id,
+      from_warehouse_id: targetFromWarehouseId,
+      to_warehouse_id: targetToWarehouseId,
+      urgency: 'normal'
+    });
+
     res.json({ 
       success: true, 
       message: `تم حفظ تعديل إذن التحويل المخزني وتحديث حركة الأرصدة (${result.finalTotalItems} جهاز) بنجاح` 
@@ -3032,6 +3117,17 @@ router.delete('/transfers/stock/:id', (req, res) => {
     deleteTx();
 
     logActivity(req, 'STOCK_TRANSFER_REVERSED', 'stock_transfer', req.params.id, `إلغاء وعكس إذن التحويل المخزني: ${t.transfer_no} وإرجاع (${t.total_items}) جهاز إلى المخزن المصدر بموافقة المدير: ${manager_name || 'الإدارة'} - السبب: ${reason || 'إلغاء إداري'}`);
+
+    // Notification on Transfer Cancel / Reverse
+    createNotification({
+      type: 'stock_transfer',
+      title: `إلغاء وعكس إذن تحويل (${t.transfer_no})`,
+      message: `قام المدير ${manager_name || 'إدارة المعرض'} بإلغاء إذن التحويل رقم ${t.transfer_no} وعكس حركة الأجهزة (${t.total_items} جهاز) وإعادتها للمخزن المصدر - السبب: ${reason || 'إلغاء إداري'}`,
+      entity_type: 'stock_transfer',
+      entity_id: t.id,
+      urgency: 'urgent'
+    });
+
     res.json({ success: true, message: `تم إلغاء إذن التحويل بنجاح وإعادة جميع الأجهزة (${t.total_items} جهاز) إلى المخزن المصدر` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3523,6 +3619,22 @@ router.post('/stock-requests', (req, res) => {
     });
 
     const result = requestTx();
+
+    // Notification on Shortage Request Creation
+    const reqBranch = db.prepare('SELECT name FROM branches WHERE id = ?').get(branch_id);
+    const targetW = db.prepare('SELECT w.name, w.branch_id FROM warehouses w WHERE w.id = ?').get(from_warehouse_id || 2);
+    createNotification({
+      type: 'stock_request',
+      title: `طلب نواقص جديد (${result.requestNo})`,
+      message: `أرسل فرع (${reqBranch?.name || 'الفرع'}) طلب نواقص لعدد (${items.length}) أصناف موجه إلى مستودع (${targetW?.name || 'المستودع الرئيسي'}) - درجة الأهمية: ${urgency === 'critical' ? 'حرجة جداً' : urgency === 'urgent' ? 'عاجلة' : 'عادية'}`,
+      entity_type: 'stock_request',
+      entity_id: result.reqId,
+      from_branch_id: branch_id,
+      to_branch_id: targetW?.branch_id,
+      to_warehouse_id: from_warehouse_id || 2,
+      urgency: urgency || 'normal'
+    });
+
     res.json({ success: true, ...result, message: 'تم إرسال طلب النواقص للمستودع بنجاح' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3532,8 +3644,30 @@ router.post('/stock-requests', (req, res) => {
 router.put('/stock-requests/:id/status', (req, res) => {
   try {
     const { status, notes } = req.body;
+    const sr = db.prepare('SELECT sr.*, b.name as branch_name FROM stock_requests sr LEFT JOIN branches b ON sr.branch_id = b.id WHERE sr.id = ?').get(req.params.id);
+
     db.prepare('UPDATE stock_requests SET status = ?, notes = COALESCE(?, notes) WHERE id = ?')
       .run(status, notes || null, req.params.id);
+
+    // Notification on Shortage Request Status Update
+    if (sr) {
+      const statusLabels = {
+        approved: 'تمت الموافقة على الطلب',
+        fulfilled: 'تم صرف وتجهيز النواقص بالإذن',
+        rejected: 'تم رفض طلب النواقص',
+        pending: 'قيد المراجعة'
+      };
+      createNotification({
+        type: 'stock_request',
+        title: `تحديث طلب النواقص (${sr.request_no})`,
+        message: `تم تحديث حالة طلب النواقص لفرع (${sr.branch_name}): ${statusLabels[status] || status}`,
+        entity_type: 'stock_request',
+        entity_id: sr.id,
+        to_branch_id: sr.branch_id,
+        urgency: (status === 'approved' || status === 'fulfilled') ? 'normal' : 'urgent'
+      });
+    }
+
     res.json({ success: true, message: `تم تحديث حالة الطلب إلى ${status}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4607,6 +4741,140 @@ router.get('/reconciliation/daily', (req, res) => {
         shifts
       }
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 36. BRANCH & WAREHOUSE NOTIFICATIONS SYSTEM
+// ==========================================
+
+function ensureInitialNotifications() {
+  try {
+    const count = db.prepare('SELECT COUNT(*) as count FROM notifications').get()?.count || 0;
+    if (count === 0) {
+      const recentTransfers = db.prepare(`
+        SELECT st.*, 
+          wFrom.name as from_warehouse_name, bFrom.name as from_branch_name, bFrom.id as from_branch_id,
+          wTo.name as to_warehouse_name, bTo.name as to_branch_name, bTo.id as to_branch_id
+        FROM stock_transfers st
+        LEFT JOIN warehouses wFrom ON st.from_warehouse_id = wFrom.id
+        LEFT JOIN branches bFrom ON wFrom.branch_id = bFrom.id
+        LEFT JOIN warehouses wTo ON st.to_warehouse_id = wTo.id
+        LEFT JOIN branches bTo ON wTo.branch_id = bTo.id
+        ORDER BY st.id DESC LIMIT 3
+      `).all();
+
+      for (const t of recentTransfers) {
+        createNotification({
+          type: 'stock_transfer',
+          title: `إذن تحويل بضائع (${t.transfer_no})`,
+          message: `تم تحويل ${t.total_items} جهاز من ${t.from_warehouse_name || 'المخزن المصدر'} إلى ${t.to_warehouse_name || 'المستودع المستلم'}`,
+          entity_type: 'stock_transfer',
+          entity_id: t.id,
+          from_branch_id: t.from_branch_id,
+          to_branch_id: t.to_branch_id,
+          from_warehouse_id: t.from_warehouse_id,
+          to_warehouse_id: t.to_warehouse_id,
+          urgency: 'normal'
+        });
+      }
+
+      const recentRequests = db.prepare(`
+        SELECT sr.*, b.name as branch_name, w.name as warehouse_name
+        FROM stock_requests sr
+        LEFT JOIN branches b ON sr.branch_id = b.id
+        LEFT JOIN warehouses w ON sr.from_warehouse_id = w.id
+        ORDER BY sr.id DESC LIMIT 3
+      `).all();
+
+      for (const r of recentRequests) {
+        createNotification({
+          type: 'stock_request',
+          title: `طلب نواقص (${r.request_no})`,
+          message: `طلب نواقص واحتياجات فرع (${r.branch_name || 'الفرع'}) موجه إلى (${r.warehouse_name || 'المستودع الرئيسي'})`,
+          entity_type: 'stock_request',
+          entity_id: r.id,
+          from_branch_id: r.branch_id,
+          urgency: r.urgency || 'normal'
+        });
+      }
+    }
+  } catch (e) {
+    console.error('Error seeding initial notifications:', e);
+  }
+}
+
+ensureInitialNotifications();
+
+router.get('/notifications', (req, res) => {
+  try {
+    const { branch_id, unread_only, limit = 50 } = req.query;
+    let query = `
+      SELECT n.*,
+        fb.name as from_branch_name,
+        tb.name as to_branch_name,
+        fw.name as from_warehouse_name,
+        tw.name as to_warehouse_name
+      FROM notifications n
+      LEFT JOIN branches fb ON n.from_branch_id = fb.id
+      LEFT JOIN branches tb ON n.to_branch_id = tb.id
+      LEFT JOIN warehouses fw ON n.from_warehouse_id = fw.id
+      LEFT JOIN warehouses tw ON n.to_warehouse_id = tw.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (unread_only === 'true' || unread_only === '1') {
+      query += ` AND n.is_read = 0 `;
+    }
+    if (branch_id) {
+      query += ` AND (n.to_branch_id = ? OR n.from_branch_id = ? OR n.to_branch_id IS NULL) `;
+      params.push(Number(branch_id), Number(branch_id));
+    }
+    query += ` ORDER BY n.id DESC LIMIT ? `;
+    params.push(Number(limit));
+
+    const notifications = db.prepare(query).all(...params);
+    const unreadCount = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE is_read = 0').get()?.count || 0;
+
+    res.json({ notifications, unreadCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/notifications/:id/read', (req, res) => {
+  try {
+    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/notifications/read-all', (req, res) => {
+  try {
+    db.prepare('UPDATE notifications SET is_read = 1').run();
+    res.json({ success: true, message: 'تم تحديد جميع الإشعارات كمقروءة' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/notifications/:id', (req, res) => {
+  try {
+    db.prepare('DELETE FROM notifications WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/notifications/clear-read', (req, res) => {
+  try {
+    db.prepare('DELETE FROM notifications WHERE is_read = 1').run();
+    res.json({ success: true, message: 'تم مسح الإشعارات المقروءة' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

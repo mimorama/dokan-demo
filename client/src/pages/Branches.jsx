@@ -30,9 +30,11 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import CycleCountModal from '../components/CycleCountModal';
+import TransferPrint from '../components/TransferPrint';
 
-export default function Branches({ settings, currentUser }) {
-  const [activeTab, setActiveTab] = useState('branches'); // 'branches', 'warehouses', 'transfers', 'requests', 'matrix'
+export default function Branches({ settings, currentUser, onPrintTransfer, initialTab }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'branches'); // 'branches', 'warehouses', 'transfers', 'requests', 'matrix'
+  const [localPrintTransfer, setLocalPrintTransfer] = useState(null);
   const [branches, setBranches] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [transfers, setTransfers] = useState([]);
@@ -41,6 +43,20 @@ export default function Branches({ settings, currentUser }) {
   const [inventoryMatrix, setInventoryMatrix] = useState({ products: [], warehouses: [] });
   const [allProductsList, setAllProductsList] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const handlePrintTransfer = (t) => {
+    if (onPrintTransfer) {
+      onPrintTransfer(t);
+    } else {
+      setLocalPrintTransfer(t);
+    }
+  };
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Modals
   const [showAddBranchModal, setShowAddBranchModal] = useState(false);
@@ -856,6 +872,14 @@ export default function Branches({ settings, currentUser }) {
                               <span>مشاهدة</span>
                             </button>
                             <button
+                              onClick={() => handlePrintTransfer(t)}
+                              title="طباعة إذن التحويل المخزني الرسمي (A4)"
+                              className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition cursor-pointer flex items-center gap-1 font-bold text-[11px]"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>طباعة</span>
+                            </button>
+                            <button
                               onClick={() => handleOpenEditTransfer(t)}
                               title="تعديل بيانات وملاحظات التحويل (بموافقة المدير)"
                               className="p-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition cursor-pointer flex items-center gap-1 font-bold text-[11px]"
@@ -1539,11 +1563,16 @@ export default function Branches({ settings, currentUser }) {
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 mt-4 no-print">
               <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold flex items-center gap-1.5 cursor-pointer text-xs"
+                type="button"
+                onClick={() => {
+                  const t = viewTransferModal;
+                  setViewTransferModal(null);
+                  handlePrintTransfer(t);
+                }}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 cursor-pointer text-xs shadow-md transition-all"
               >
-                <Printer className="w-4 h-4" />
-                <span>طباعة الإذن</span>
+                <Printer className="w-4 h-4 text-emerald-200" />
+                <span>طباعة الإذن الرسمي (A4)</span>
               </button>
               <button
                 onClick={() => setViewTransferModal(null)}
@@ -2337,6 +2366,15 @@ export default function Branches({ settings, currentUser }) {
         settings={settings}
         onAuditSaved={() => loadData()}
       />
+
+      {/* Fallback Transfer Printable Modal */}
+      {localPrintTransfer && (
+        <TransferPrint
+          transfer={localPrintTransfer}
+          settings={settings}
+          onClose={() => setLocalPrintTransfer(null)}
+        />
+      )}
     </div>
   );
 }

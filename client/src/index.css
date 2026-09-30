@@ -132,6 +132,7 @@
   /* 3. Keep printable documents in natural layout flow (NO position: absolute) for natural multi-page pagination */
   #official-printable-area,
   #invoice-printable-area,
+  #transfer-printable-area,
   #zreport-printable-area,
   #printable-area,
   .printable-area {
@@ -154,6 +155,7 @@
 
   #official-printable-area *,
   #invoice-printable-area *,
+  #transfer-printable-area *,
   #zreport-printable-area *,
   #printable-area *,
   .printable-area * {

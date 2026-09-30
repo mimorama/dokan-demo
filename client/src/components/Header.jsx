@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShoppingCart, Wallet, Wifi, Calendar, Bell, Users, ShieldCheck, LogOut, Building2, Clock, CheckCircle } from 'lucide-react';
+import NotificationCenter from './NotificationCenter';
 
 export default function Header({ 
   title, 
@@ -11,7 +12,9 @@ export default function Header({
   onOpenShiftModal,
   onSwitchUser,
   onLogout,
-  onOpenUsersManagement
+  onOpenUsersManagement,
+  onNavigateTab,
+  onViewTransfer
 }) {
   const currentDate = new Intl.DateTimeFormat('ar-EG', {
     weekday: 'long',
@@ -69,6 +72,13 @@ export default function Header({
             </div>
           </button>
         )}
+
+        {/* Notifications Center for Branches, Warehouses & Transfers */}
+        <NotificationCenter
+          currentUser={currentUser}
+          onNavigateTab={onNavigateTab}
+          onViewTransfer={onViewTransfer}
+        />
 
         {/* User Profile Badge */}
         {currentUser && (
