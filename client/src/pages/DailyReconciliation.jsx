@@ -676,7 +676,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
                   </div>
 
                   <div className="mt-4 pt-2 border-t border-slate-200 flex justify-between text-[8px] text-slate-400">
-                    <span>حرر إلكترونياً عبر منظومة دكان عبد العزيز v2.5</span>
+                    <span>حرر إلكترونياً عبر منظومة دكان عبد العزيز v3.1.0</span>
                     <span>تاريخ وساعة التقفيل: {new Date().toLocaleString('ar-EG')}</span>
                   </div>
                 </div>

@@ -227,7 +227,7 @@ export default function Sidebar({
             قاعدة البيانات متصلة
           </span>
         </div>
-        <span className="px-1.5 py-0.5 bg-slate-800/80 border border-slate-700/50 rounded text-[9.5px] text-slate-300 font-mono">v2.5</span>
+        <span className="px-2 py-0.5 bg-blue-950/80 border border-blue-500/40 rounded text-[10px] text-blue-300 font-mono font-bold tracking-wider" title="إصدار المنظومة v3.1.0">v3.1.0</span>
       </div>
     </aside>
   );

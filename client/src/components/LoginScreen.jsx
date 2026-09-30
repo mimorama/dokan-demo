@@ -163,7 +163,7 @@ export default function LoginScreen({ settings, onLoginSuccess }) {
       <footer className="text-center text-xs text-slate-500 py-4">
         <p className="font-bold text-slate-400">{storeName} &copy; 2026</p>
         <p className="text-[11px] text-slate-600 mt-0.5">
-          منظومة إدارة المعارض، نقاط البيع، المخازن والمراجعة المالية • إصدار معتمد v2.5
+          منظومة إدارة المعارض، نقاط البيع، المخازن والمراجعة المالية • إصدار معتمد v3.1.0
         </p>
       </footer>
     </div>

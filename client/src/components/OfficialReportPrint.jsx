@@ -544,7 +544,7 @@ export default function OfficialReportPrint({ reportType, reportData, startDate,
 
               {/* Bottom Micro Footer */}
               <div className="mt-4 print:mt-2 pt-1.5 border-t border-slate-200 flex justify-between items-center text-[8.5px] print:text-[8px] text-slate-400">
-                <span>تمت الطباعة آلياً عبر منظومة دكان عبد العزيز الذكية v3.0 (توقيت القاهرة)</span>
+                <span>تمت الطباعة آلياً عبر منظومة دكان عبد العزيز الذكية v3.1.0 (توقيت القاهرة)</span>
                 <span>{address}</span>
                 <span>صفحة رسمية معتمدة</span>
               </div>

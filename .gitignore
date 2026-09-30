@@ -13,6 +13,7 @@ dokan.db-journal
 # Backup archives and release zip packages
 backups/
 Dokan_Release_*/
+Dokan_Local_Server_*/
 *.zip
 *.tar.gz
 
