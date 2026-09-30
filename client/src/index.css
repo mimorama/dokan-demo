@@ -52,7 +52,7 @@
 
 @page {
   size: A4 portrait;
-  margin: 6mm 8mm;
+  margin: 8mm 10mm;
 }
 
 /* Print specific styles for all documents (Invoices, Reports, Receipts, Contracts, Transfers) */

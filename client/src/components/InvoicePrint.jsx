@@ -122,7 +122,7 @@ ${publicLink}
         @media print {
           @page {
             size: ${printFormat === 'thermal' ? '80mm auto' : 'A4 portrait'};
-            margin: ${printFormat === 'thermal' ? '0mm' : '8mm'};
+            margin: ${printFormat === 'thermal' ? '0mm' : '8mm 10mm'};
           }
           body {
             background: #ffffff !important;
@@ -146,6 +146,17 @@ ${publicLink}
             height: auto !important;
             min-height: 0 !important;
             overflow: visible !important;
+          }
+          table {
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tr, .avoid-break {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>
@@ -427,229 +438,251 @@ ${publicLink}
             /* ========================================================== */
             <div
               id="invoice-printable-area"
-              className="bg-white shadow-md text-slate-900 w-[210mm] max-w-full p-8 print:p-0 print:m-0 print:min-h-0 print:w-full print:max-w-none print:shadow-none print:border-none print:block rounded-sm"
+              className="bg-white shadow-xl text-slate-900 w-full max-w-[210mm] p-6 sm:p-7 print:p-0 print:m-0 print:min-h-0 print:w-full print:max-w-none print:shadow-none print:border-none print:block rounded-xl border border-slate-200 font-['Cairo',sans-serif] text-xs leading-normal"
             >
-              {/* Header with Logo */}
-              <div className="border-b-2 border-slate-900 pb-4 mb-4 flex items-start justify-between">
-                <div>
-                  <img
-                    src={logoUrl}
-                    alt={storeName}
-                    className="h-12 max-w-[240px] object-contain mb-1"
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
-                  <h1 className="text-xl font-black text-slate-900 tracking-tight">
-                    {storeName}
-                  </h1>
-                  <p className="text-xs text-slate-600 font-semibold mt-0.5">
-                    {settings?.tagline || 'ثلاجات - غسالات - شاشات - تكييفات - كاش وبالتقسيط المريح'}
-                  </p>
-                  <div className="text-[11px] text-slate-500 mt-1 space-y-0.5 font-medium">
-                    <p>📍 {currentSale.branch_address || settings?.address || 'شارع الأزهر - القاهرة'}</p>
-                    <p>📞 {currentSale.branch_phone || settings?.phone || '01023456789'} {settings?.phone2 && `| ${settings?.phone2}`}</p>
-                    {settings?.tax_number && <p>س.ت: {settings?.commercial_reg} | ب.ض: {settings?.tax_number}</p>}
+              {/* Header with Logo & Meta */}
+              <div className="border-b-2 border-slate-900 pb-2.5 mb-2.5 flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-1">
+                    <img
+                      src={logoUrl}
+                      alt={storeName}
+                      className="h-10 sm:h-11 max-w-[180px] object-contain"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                    <div>
+                      <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
+                        {storeName}
+                      </h1>
+                      <p className="text-[10px] text-slate-600 font-bold">
+                        {settings?.tagline || 'تجارة وتوزيع الأجهزة الكهربائية والمنزلية والتقسيط المريح'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-[9.5px] text-slate-500 font-medium space-y-0.5 flex flex-wrap gap-x-4">
+                    <span>📍 {currentSale.branch_address || settings?.address || 'شارع الأزهر - القاهرة'}</span>
+                    <span>📞 {currentSale.branch_phone || settings?.phone || '01023456789'} {settings?.phone2 && `| ${settings?.phone2}`}</span>
+                    {settings?.commercial_reg && <span>س.ت: {settings?.commercial_reg} | ب.ض: {settings?.tax_number}</span>}
                   </div>
                 </div>
 
-                <div className="text-left">
-                  <span className={`inline-block px-3 py-1 rounded-md font-black text-xs border ${
-                    currentSale.sale_type === 'finance_company'
-                      ? 'bg-indigo-50 text-indigo-900 border-indigo-300'
-                      : currentSale.sale_type === 'installment'
-                      ? 'bg-amber-50 text-amber-900 border-amber-300'
-                      : 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                  }`}>
-                    {currentSale.sale_type === 'finance_company'
-                      ? `تقسيط ممول (${currentSale.finance_company_name || 'فاليو / بنوك'})`
-                      : currentSale.sale_type === 'installment'
-                      ? 'فاتورة بيع بالتقسيط'
-                      : 'فاتورة مبيعات نقدية'}
-                  </span>
-                  {currentSale.installment_plan_name && (
-                    <p className="text-[10px] font-bold text-indigo-800 mt-1">
-                      خطة: {currentSale.installment_plan_name} {currentSale.installment_duration_months ? `(${currentSale.installment_duration_months} شهر)` : ''}
-                    </p>
-                  )}
-                  {currentSale.finance_approval_code && (
-                    <p className="text-[10px] font-mono font-bold text-indigo-700 mt-0.5" dir="ltr">
-                      موافقة: {currentSale.finance_approval_code}
-                    </p>
-                  )}
-                  <p className="text-xs font-mono font-bold mt-2 text-slate-800">#{currentSale.invoice_no}</p>
-                  <p className="text-[11px] text-slate-500">{new Date(currentSale.created_at).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short' })}</p>
-                  <p className="text-[10px] text-blue-700 font-bold mt-1">الفرع: {currentSale.branch_name || 'معرض الأزهر الرئيسي'}</p>
+                <div className="text-left shrink-0">
+                  <div className="border border-slate-400 bg-slate-50 p-2 rounded-lg text-left min-w-[170px]">
+                    <span className={`inline-block px-2 py-0.5 rounded font-black text-[10px] border mb-1 w-full text-center ${
+                      currentSale.sale_type === 'finance_company'
+                        ? 'bg-indigo-50 text-indigo-900 border-indigo-300'
+                        : currentSale.sale_type === 'installment'
+                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                        : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                    }`}>
+                      {currentSale.sale_type === 'finance_company'
+                        ? `تقسيط شركة (${currentSale.finance_company_name || 'فاليو / بنوك'})`
+                        : currentSale.sale_type === 'installment'
+                        ? 'فاتورة بيع بالتقسيط'
+                        : 'فاتورة مبيعات نقدية'}
+                    </span>
+                    <div className="flex justify-between items-center text-[10px] border-b border-slate-200 pb-0.5">
+                      <span className="text-slate-500">رقم الفاتورة:</span>
+                      <span className="font-mono font-black text-blue-900" dir="ltr">{currentSale.invoice_no}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[9.5px] border-b border-slate-200 py-0.5">
+                      <span className="text-slate-500">التاريخ:</span>
+                      <span className="font-bold text-slate-800">{new Date(currentSale.created_at).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[9px] pt-0.5 text-slate-600">
+                      <span>الفرع:</span>
+                      <span className="font-bold text-slate-800">{currentSale.branch_name || 'معرض الأزهر الرئيسي'}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Customer Information */}
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4 text-xs">
-                <div className="grid grid-cols-2 gap-2">
+              {/* Customer Information Bar */}
+              <div className="bg-slate-50 border border-slate-300 rounded-lg p-2 mb-2.5 text-[11px]">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
-                    <span className="text-slate-500 font-semibold">اسم العميل: </span>
-                    <span className="font-bold text-slate-800">{currentSale.customer_name || 'عميل نقدي'}</span>
+                    <span className="text-slate-500 block text-[9.5px] font-semibold">اسم العميل:</span>
+                    <span className="font-extrabold text-slate-900 text-xs block truncate">{currentSale.customer_name || 'عميل نقدي'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-semibold">رقم الهاتف: </span>
-                    <span className="font-bold text-slate-800" dir="ltr">{currentSale.customer_phone || '---'}</span>
+                    <span className="text-slate-500 block text-[9.5px] font-semibold">رقم الهاتف:</span>
+                    <span className="font-bold font-mono text-slate-900 block" dir="ltr">{currentSale.customer_phone || '---'}</span>
                   </div>
-                  {currentSale.customer_national_id && (
-                    <div>
-                      <span className="text-slate-500 font-semibold">الرقم القومي: </span>
-                      <span className="font-bold text-slate-800" dir="ltr">{currentSale.customer_national_id}</span>
-                    </div>
-                  )}
-                  {currentSale.customer_address && (
-                    <div>
-                      <span className="text-slate-500 font-semibold">العنوان: </span>
-                      <span className="font-bold text-slate-800">{currentSale.customer_address}</span>
-                    </div>
-                  )}
+                  <div>
+                    <span className="text-slate-500 block text-[9.5px] font-semibold">الرقم القومي:</span>
+                    <span className="font-bold font-mono text-slate-800 block" dir="ltr">{currentSale.customer_national_id || 'غير مسجل'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[9.5px] font-semibold">العنوان:</span>
+                    <span className="font-bold text-slate-800 block truncate">{currentSale.customer_address || currentSale.branch_address || '---'}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Sold Appliances Table (With Serial Numbers & Warranty) */}
-              <table className="w-full text-right border-collapse mb-4 text-xs">
-                <thead>
-                  <tr className="bg-slate-900 text-white font-bold">
-                    <th className="p-2 border border-slate-900 w-8 text-center">#</th>
-                    <th className="p-2 border border-slate-900">بيان الجهاز والموديل</th>
-                    <th className="p-2 border border-slate-900">الرقم التسلسلي (Serial Number)</th>
-                    <th className="p-2 border border-slate-900">فترة الضمان والوكيل</th>
-                    <th className="p-2 border border-slate-900 text-left">السعر</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(!currentSale.items || currentSale.items.length === 0) ? (
-                    <tr>
-                      <td colSpan="5" className="p-4 text-center text-slate-500 font-bold border border-slate-200">
-                        {loadingSale ? 'جاري استدعاء تفاصيل الأجهزة والضمان...' : 'لا توجد أجهزة مسجلة في هذه الفاتورة'}
-                      </td>
+              {/* Sold Appliances Table */}
+              <div className="mb-2.5">
+                <table className="w-full text-right border-collapse border border-slate-400 text-[11px]">
+                  <thead>
+                    <tr className="bg-slate-900 text-white font-bold">
+                      <th className="p-1.5 border border-slate-900 w-7 text-center">م</th>
+                      <th className="p-1.5 border border-slate-900">بيان الصنف والموديل</th>
+                      <th className="p-1.5 border border-slate-900 text-center w-36">الرقم التسلسلي (Serial No)</th>
+                      <th className="p-1.5 border border-slate-900 text-center w-40">الضمان والوكيل المعتمد</th>
+                      <th className="p-1.5 border border-slate-900 text-left w-24">السعر</th>
                     </tr>
-                  ) : (
-                    currentSale.items.map((item, index) => (
-                      <tr key={index} className="border-b border-slate-200">
-                        <td className="p-2 border border-slate-200 text-center font-bold">{index + 1}</td>
-                        <td className="p-2 border border-slate-200">
-                          <p className="font-extrabold text-slate-800">{item.product_name || item.name || 'جهاز كهربائي'}</p>
-                          {item.model_number && (
-                            <p className="text-[10px] text-slate-500 font-mono">موديل: {item.model_number}</p>
-                          )}
-                          {item.specifications && (
-                            <p className="text-[9px] text-slate-400 mt-0.5 line-clamp-1">{item.specifications}</p>
-                          )}
-                        </td>
-                        <td className="p-2 border border-slate-200">
-                          <span className="font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-blue-700 block text-center" dir="ltr">
-                            {item.serial_number || 'غير مدون'}
-                          </span>
-                        </td>
-                        <td className="p-2 border border-slate-200 text-[11px]">
-                          <div className="flex items-center gap-1 font-bold text-emerald-700">
-                            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                            <span>{item.warranty_months ? `${item.warranty_months} شهر (${Math.round(item.warranty_months / 12)} سنوات)` : 'ضمان الوكيل المعتمد'}</span>
-                          </div>
-                          {item.warranty_agency && (
-                            <p className="text-[10px] text-slate-500 mt-0.5">وكيل: {item.warranty_agency}</p>
-                          )}
-                        </td>
-                        <td className="p-2 border border-slate-200 font-extrabold text-slate-900 text-left" dir="ltr">
-                          {Number(item.unit_price || 0).toLocaleString()} {currency}
+                  </thead>
+                  <tbody>
+                    {(!currentSale.items || currentSale.items.length === 0) ? (
+                      <tr>
+                        <td colSpan="5" className="p-3 text-center text-slate-500 font-bold border border-slate-300">
+                          {loadingSale ? 'جاري استدعاء تفاصيل الأجهزة والضمان...' : 'لا توجد أجهزة مسجلة في هذه الفاتورة'}
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      currentSale.items.map((item, index) => (
+                        <tr key={index} className="border-b border-slate-300 hover:bg-slate-50">
+                          <td className="p-1.5 border border-slate-300 text-center font-bold text-slate-500">{index + 1}</td>
+                          <td className="p-1.5 border border-slate-300">
+                            <p className="font-black text-slate-900 text-xs">{item.product_name || item.name || 'جهاز كهربائي'}</p>
+                            <div className="flex items-center gap-2 text-[9.5px] text-slate-500 mt-0.5">
+                              {item.model_number && <span className="font-mono">موديل: {item.model_number}</span>}
+                              {item.brand_name && <span>ماركة: {item.brand_name}</span>}
+                            </div>
+                            {item.specifications && (
+                              <p className="text-[9px] text-slate-400 line-clamp-1 mt-0.5">{item.specifications}</p>
+                            )}
+                          </td>
+                          <td className="p-1.5 border border-slate-300 text-center">
+                            <span className="font-mono font-bold bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-blue-900 text-[10px] inline-block" dir="ltr">
+                              {item.serial_number || 'غير مدون'}
+                            </span>
+                          </td>
+                          <td className="p-1.5 border border-slate-300 text-center">
+                            <div className="inline-flex items-center gap-1 font-bold text-emerald-800 text-[10px]">
+                              <ShieldCheck className="w-3 h-3 shrink-0" />
+                              <span>{item.warranty_months ? `ضمان ${item.warranty_months} شهر (${Math.round(item.warranty_months / 12)} سنة)` : 'ضمان معتمد'}</span>
+                            </div>
+                            {item.warranty_agency && (
+                              <p className="text-[9px] text-slate-500 mt-0.5">وكيل: {item.warranty_agency}</p>
+                            )}
+                          </td>
+                          <td className="p-1.5 border border-slate-300 font-black text-slate-900 text-left font-mono" dir="ltr">
+                            {Number(item.unit_price || 0).toLocaleString()} {currency}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-              {/* Financial Summary */}
-              <div className="flex justify-end mb-4">
-                <div className="w-72 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-1.5">
-                  <div className="flex justify-between">
-                    <span className="text-slate-600 font-medium">الإجمالي:</span>
-                    <span className="font-bold text-slate-800" dir="ltr">{Number(currentSale.subtotal || currentSale.total || 0).toLocaleString()} {currency}</span>
+              {/* Financial Totals & Installment Block (Side-by-Side to Save Vertical A4 Space) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5 items-start">
+                {/* Right / Left Side: Installment Highlights (if applicable) or Delivery / Notes */}
+                {(currentSale.installment_plan_name || currentSale.sale_type === 'finance_company' || currentSale.sale_type === 'installment') ? (
+                  <div className="bg-indigo-50/60 border border-indigo-200 rounded-lg p-2.5 text-[10px] space-y-1">
+                    <div className="font-black text-indigo-950 text-xs flex items-center justify-between border-b border-indigo-200 pb-1">
+                      <span>خطة ونظام التقسيط المعتمد:</span>
+                      <span className="text-[10px] font-bold text-indigo-700 font-mono">
+                        {currentSale.installment_duration_months ? `${currentSale.installment_duration_months} شهر` : ''}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-700">
+                      <span>النظام:</span>
+                      <span className="font-bold text-indigo-900">{currentSale.installment_plan_name || currentSale.finance_company_name || 'تقسيط معرض'}</span>
+                    </div>
+                    {currentSale.installment_plan?.monthly_amount && (
+                      <div className="flex justify-between text-slate-700">
+                        <span>القسط الشهري:</span>
+                        <span className="font-bold font-mono text-indigo-900" dir="ltr">{Number(currentSale.installment_plan.monthly_amount).toLocaleString()} {currency}</span>
+                      </div>
+                    )}
+                    {currentSale.installment_plan?.start_date && (
+                      <div className="flex justify-between text-slate-700">
+                        <span>تاريخ بداية السداد:</span>
+                        <span className="font-bold font-mono text-indigo-900">{currentSale.installment_plan.start_date}</span>
+                      </div>
+                    )}
+                    {currentSale.installment_plan?.guarantor_name && (
+                      <div className="flex justify-between text-slate-700">
+                        <span>الضامن المتضامن:</span>
+                        <span className="font-bold text-slate-900">{currentSale.installment_plan.guarantor_name} ({currentSale.installment_plan.guarantor_phone || ''})</span>
+                      </div>
+                    )}
+                    {currentSale.finance_approval_code && (
+                      <div className="flex justify-between text-slate-700">
+                        <span>كود الموافقة البنكية:</span>
+                        <span className="font-mono font-bold text-indigo-800" dir="ltr">{currentSale.finance_approval_code}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-[10px] space-y-1">
+                    <span className="font-bold text-slate-700 block border-b border-slate-200 pb-1">ملاحظات الفاتورة والتسليم:</span>
+                    <p className="text-slate-600 text-[9.5px] leading-relaxed">
+                      ✓ تم فحص ومطابقة الأجهزة الكهربائية المسجلة بالسيريال مع كراتين المصنع الأصلية قبل التسليم.
+                    </p>
+                    <p className="text-slate-600 text-[9.5px] leading-relaxed">
+                      ✓ يسري الضمان الشامل بالتعاون مع مراكز الصيانة وخدمة العملاء المعتمدة بموجب هذه الفاتورة.
+                    </p>
+                  </div>
+                )}
+
+                {/* Left Side: Financial Totals Box */}
+                <div className="bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs space-y-1">
+                  <div className="flex justify-between text-slate-600 text-[11px]">
+                    <span>إجمالي الأصناف:</span>
+                    <span className="font-bold font-mono" dir="ltr">{Number(currentSale.subtotal || currentSale.total || 0).toLocaleString()} {currency}</span>
                   </div>
                   {Number(currentSale.discount) > 0 && (
-                    <div className="flex justify-between text-rose-600">
-                      <span>خصم خاص:</span>
-                      <span dir="ltr">-{Number(currentSale.discount).toLocaleString()} {currency}</span>
+                    <div className="flex justify-between text-rose-600 text-[11px]">
+                      <span>خصم ممنوح:</span>
+                      <span className="font-bold font-mono" dir="ltr">-{Number(currentSale.discount).toLocaleString()} {currency}</span>
                     </div>
                   )}
-                  <div className="flex justify-between border-t border-slate-200 pt-1.5 font-extrabold text-sm text-slate-900">
+                  <div className="flex justify-between border-t border-slate-300 pt-1 font-black text-sm text-slate-900">
                     <span>الصافي المطلوب:</span>
-                    <span dir="ltr">{Number(currentSale.total || 0).toLocaleString()} {currency}</span>
+                    <span className="font-mono" dir="ltr">{Number(currentSale.total || 0).toLocaleString()} {currency}</span>
                   </div>
-                  <div className="flex justify-between text-emerald-700 font-bold">
+                  <div className="flex justify-between text-emerald-800 font-bold text-[11px]">
                     <span>{currentSale.sale_type === 'installment' ? 'المقدم المدفوع:' : 'المبلغ المسدد:'}</span>
-                    <span dir="ltr">{Number(currentSale.paid_amount || 0).toLocaleString()} {currency}</span>
+                    <span className="font-mono" dir="ltr">{Number(currentSale.paid_amount || 0).toLocaleString()} {currency}</span>
                   </div>
                   {Number(currentSale.remaining_amount) > 0 && (
-                    <div className="flex justify-between text-amber-700 font-bold border-t border-slate-200 pt-1">
+                    <div className="flex justify-between text-amber-800 font-bold text-[11px] border-t border-dashed border-slate-300 pt-0.5">
                       <span>{currentSale.sale_type === 'installment' ? 'المتبقي أقساط:' : 'المتبقي آجل:'}</span>
-                      <span dir="ltr">{Number(currentSale.remaining_amount).toLocaleString()} {currency}</span>
-                    </div>
-                  )}
-                  {currentSale.installment_plan_name && (
-                    <div className="pt-1 border-t border-slate-200 text-[11px] text-indigo-700 font-bold flex justify-between">
-                      <span>خطة التقسيط:</span>
-                      <span>{currentSale.installment_plan_name}</span>
+                      <span className="font-mono" dir="ltr">{Number(currentSale.remaining_amount).toLocaleString()} {currency}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Installment Plan Highlights (If Installment Sale) */}
-              {currentSale.sale_type === 'installment' && currentSale.installment_plan && (
-                <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-3 mb-4 text-xs">
-                  <h4 className="font-black text-amber-900 mb-2">تفاصيل خطة التقسيط والأقساط الشهرية:</h4>
-                  <div className="grid grid-cols-4 gap-2 mb-2 text-center">
-                    <div className="bg-white p-2 rounded border border-amber-200">
-                      <span className="block text-slate-500 text-[10px]">عدد الأقساط</span>
-                      <span className="font-bold text-amber-900">{currentSale.installment_plan.installments_count} شهر</span>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-amber-200">
-                      <span className="block text-slate-500 text-[10px]">القسط الشهري</span>
-                      <span className="font-extrabold text-amber-900">{Number(currentSale.installment_plan.monthly_amount).toLocaleString()} {currency}</span>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-amber-200">
-                      <span className="block text-slate-500 text-[10px]">تاريخ بداية السداد</span>
-                      <span className="font-bold text-amber-900">{currentSale.installment_plan.start_date}</span>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-amber-200">
-                      <span className="block text-slate-500 text-[10px]">بيانات الضامن</span>
-                      <span className="font-bold text-amber-900">{currentSale.installment_plan.guarantor_name || 'مسجل بالعقد'}</span>
-                    </div>
-                  </div>
+              {/* Warranty & Store Policy Notice */}
+              <div className="border border-slate-200 bg-slate-50/70 rounded-lg p-2 text-[9.5px] text-slate-600 mb-2.5">
+                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-0.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                  <span>شروط الضمان المعتمد وحماية المستهلك:</span>
                 </div>
-              )}
-
-              {/* Warranty & Store Policy */}
-              <div className="border border-slate-200 rounded-lg p-3 text-[10px] text-slate-600 bg-slate-50/50 mb-6">
-                <h5 className="font-bold text-slate-800 mb-1 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                  شروط الضمان وخدمة ما بعد البيع:
-                </h5>
                 <p className="leading-relaxed">
-                  {settings?.warranty_policy || 'يسري الضمان من تاريخ هذه الفاتورة بالسيريال نمبر الموضح أعلاه مع أصل شهادة ضمان الشركة المرفقة مع كرتونة الجهاز.'}
-                </p>
-                <p className="mt-1 font-semibold text-slate-700">
-                  * في حالة وجود أي عطل فني خلال فترة الضمان، يرجى التواصل مباشرة مع الخط الساخن لتوكيل الجهاز أو مراجعة المعرض.
+                  {settings?.warranty_policy || 'يسري الضمان المعتمد من تاريخ هذه الفاتورة بالسيريال نمبر المدون أعلاه مع أصل شهادة ضمان الشركة المرفقة مع كرتونة الجهاز. البضاعة المباعة ترد وتستبدل خلال 14 يوماً وفق قانون حماية المستهلك بحالة المصنع الأصلية.'}
                 </p>
               </div>
 
-              {/* Signatures & Seal */}
-              <div className="grid grid-cols-2 gap-8 text-center text-xs pt-4 border-t border-slate-200">
+              {/* Signatures & Seal Box */}
+              <div className="grid grid-cols-2 gap-6 text-center text-xs pt-2 border-t-2 border-slate-800 avoid-break" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
                 <div>
-                  <p className="font-bold text-slate-700">توقيع المستلم / المشتري</p>
-                  <div className="h-14 border-b border-dashed border-slate-400 mt-2"></div>
-                  <p className="text-[10px] text-slate-500 mt-1">أقر باستلام الأجهزة بحالة المصنع والكرتونة سليمة</p>
+                  <p className="font-bold text-slate-800 text-[11px]">توقيع المستلم / المشتري</p>
+                  <div className="h-9 border-b border-dashed border-slate-400 mt-1"></div>
+                  <p className="text-[9px] text-slate-500 mt-1">أقر باستلام الأجهزة الموضحة أعلاه بحالة المصنع والكرتونة سليمة</p>
                 </div>
                 <div>
-                  <p className="font-bold text-slate-700">ختم وتوقيع المعرض</p>
-                  <div className="h-14 border-b border-dashed border-slate-400 mt-2 flex items-center justify-center">
-                    <span className="text-[11px] font-bold text-blue-800 border-2 border-dashed border-blue-600 px-3 py-1 rounded rotate-[-4deg]">
-                      معتمد | {storeName}
+                  <p className="font-bold text-slate-800 text-[11px]">ختم وتوقيع إدارة المعرض</p>
+                  <div className="h-9 border-b border-dashed border-slate-400 mt-1 flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-blue-900 border-2 border-dashed border-blue-700 px-3 py-0.5 rounded rotate-[-3deg] bg-blue-50/50">
+                      معتمد رسمياً | {storeName}
                     </span>
                   </div>
+                  <p className="text-[9px] text-slate-500 mt-1">س.ت: {settings?.commercial_reg || '198425'} | ب.ض: {settings?.tax_number || '654-321-987'}</p>
                 </div>
               </div>
             </div>
