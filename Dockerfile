@@ -1,5 +1,5 @@
 # Use official Node.js LTS image
-FROM node:20-slim
+FROM node:22-slim
 
 # Install native dependencies required for better-sqlite3 build
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*

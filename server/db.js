@@ -4,7 +4,26 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dbPath = path.join(__dirname, '..', 'dokan.db');
+const defaultDbPath = path.join(__dirname, '..', 'dokan.db');
+const dbPath = process.env.DB_PATH || defaultDbPath;
+
+// If a custom DB_PATH is specified (e.g. Render Persistent Disk /var/data/dokan.db)
+// and the file doesn't exist yet, copy initial seed database so the app starts fully populated
+if (dbPath !== defaultDbPath && !fs.existsSync(dbPath)) {
+  const targetDir = path.dirname(dbPath);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  if (fs.existsSync(defaultDbPath)) {
+    try {
+      fs.copyFileSync(defaultDbPath, dbPath);
+      console.log(`📦 Copied initial seed database to persistent path: ${dbPath}`);
+    } catch (e) {
+      console.error('Failed to copy initial database:', e);
+    }
+  }
+}
+
 const db = new Database(dbPath);
 
 // Enable WAL mode for performance & concurrent reads

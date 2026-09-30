@@ -10,11 +10,10 @@
     "build:all": "npm install && npm --prefix client install && npm --prefix client run build",
     "dev:server": "node server/index.js",
     "dev:client": "cd client && npm run dev",
-    "postinstall": "npm rebuild better-sqlite3",
     "test": "node -e \"require('./server/db'); console.log('✅ Dokan system checks passed');\""
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "keywords": [
     "appliances",
