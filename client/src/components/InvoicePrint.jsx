@@ -479,23 +479,10 @@ ${publicLink}
                 </div>
 
                 <div className="text-left shrink-0">
-                  <div className="border border-slate-400 bg-slate-50 p-2 rounded-lg text-left min-w-[170px]">
-                    <span className={`inline-block px-2 py-0.5 rounded font-black text-[10px] border mb-1 w-full text-center ${
-                      currentSale.sale_type === 'finance_company'
-                        ? 'bg-indigo-50 text-indigo-900 border-indigo-300'
-                        : currentSale.sale_type === 'installment'
-                        ? 'bg-amber-50 text-amber-900 border-amber-300'
-                        : 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                    }`}>
-                      {currentSale.sale_type === 'finance_company'
-                        ? `تقسيط شركة (${currentSale.finance_company_name || 'فاليو / بنوك'})`
-                        : currentSale.sale_type === 'installment'
-                        ? 'فاتورة بيع بالتقسيط'
-                        : 'فاتورة مبيعات نقدية'}
-                    </span>
+                  <div className="border border-slate-400 bg-slate-50 p-2 rounded-lg text-left min-w-[170px] space-y-1">
                     <div className="flex justify-between items-center text-[10px] border-b border-slate-200 pb-0.5">
-                      <span className="text-slate-500">رقم الفاتورة:</span>
-                      <span className="font-mono font-black text-blue-900" dir="ltr">{currentSale.invoice_no}</span>
+                      <span className="text-slate-500 font-semibold">رقم الفاتورة:</span>
+                      <span className="font-mono font-black text-blue-900 text-xs" dir="ltr">{currentSale.invoice_no}</span>
                     </div>
                     <div className="flex justify-between items-center text-[9.5px] border-b border-slate-200 py-0.5">
                       <span className="text-slate-500">التاريخ:</span>
