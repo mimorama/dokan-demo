@@ -2846,7 +2846,17 @@ router.post('/transfers/stock', (req, res) => {
 
 router.put('/transfers/stock/:id', (req, res) => {
   try {
-    const { notes, transfer_date, created_by, manager_pin, manager_name } = req.body;
+    const { 
+      from_warehouse_id, 
+      to_warehouse_id, 
+      items, 
+      notes, 
+      transfer_date, 
+      created_by, 
+      manager_pin, 
+      manager_name 
+    } = req.body;
+
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get() || {};
     const validPin = settings.manager_override_pin || '1234';
 
@@ -2857,25 +2867,137 @@ router.put('/transfers/stock/:id', (req, res) => {
     const t = db.prepare('SELECT * FROM stock_transfers WHERE id = ?').get(req.params.id);
     if (!t) return res.status(404).json({ error: 'إذن التحويل غير موجود' });
 
-    db.prepare(`
-      UPDATE stock_transfers SET 
-        notes = ?,
-        transfer_date = COALESCE(?, transfer_date),
-        created_by = COALESCE(?, created_by),
-        manager_approved_by = ?
-      WHERE id = ?
-    `).run(
-      notes !== undefined ? notes : t.notes,
-      transfer_date || null,
-      created_by || null,
-      manager_name || 'إدارة المعرض',
-      req.params.id
+    const oldItems = db.prepare('SELECT * FROM stock_transfer_items WHERE transfer_id = ?').all(t.id);
+
+    // Verify none of the items were already sold from the destination warehouse
+    for (const it of oldItems) {
+      if (it.serial_id) {
+        const s = db.prepare('SELECT status FROM product_serials WHERE id = ?').get(it.serial_id);
+        if (s && s.status === 'sold') {
+          return res.status(400).json({ error: 'لا يمكن تعديل هذا الإذن لأن بعض أجهزته تم بيعها بالفعل للعملاء من المخزن المستلم' });
+        }
+      }
+    }
+
+    const targetFromWarehouseId = from_warehouse_id ? Number(from_warehouse_id) : t.from_warehouse_id;
+    const targetToWarehouseId = to_warehouse_id ? Number(to_warehouse_id) : t.to_warehouse_id;
+
+    if (targetFromWarehouseId === targetToWarehouseId) {
+      return res.status(400).json({ error: 'لا يمكن أن يكون المخزن المصدر هو نفس المخزن المستقبل' });
+    }
+
+    const updateTx = db.transaction(() => {
+      const updateSerial = db.prepare('UPDATE product_serials SET warehouse_id = ? WHERE id = ?');
+
+      // 1. Rollback old items: return all serials of this transfer to the original from_warehouse_id
+      for (const it of oldItems) {
+        if (it.serial_id) {
+          updateSerial.run(t.from_warehouse_id, it.serial_id);
+        }
+      }
+
+      let finalTotalItems = t.total_items;
+
+      // 2. If new items are specified, reassign items and move serials
+      if (Array.isArray(items)) {
+        const getSerialsForProduct = db.prepare(`
+          SELECT id, serial_number 
+          FROM product_serials 
+          WHERE product_id = ? AND warehouse_id = ? AND status = 'in_stock' 
+          LIMIT ?
+        `);
+
+        const newSerialRecords = [];
+
+        for (const it of items) {
+          const qty = Number(it.quantity) || 0;
+          if (qty <= 0) continue;
+
+          const available = getSerialsForProduct.all(it.product_id, targetFromWarehouseId, qty);
+          if (available.length < qty) {
+            const prodName = db.prepare('SELECT name FROM products WHERE id = ?').get(it.product_id)?.name || 'الصنف';
+            throw new Error(`الكمية المتوفرة بالمخزن المصدر للجهاز (${prodName}) غير كافية (المطلوب: ${qty}، المتوفر حالياً: ${available.length})`);
+          }
+
+          for (const s of available) {
+            newSerialRecords.push({
+              product_id: it.product_id,
+              serial_id: s.id,
+              serial_number: s.serial_number
+            });
+          }
+        }
+
+        if (newSerialRecords.length === 0) {
+          throw new Error('يجب أن يحتوي إذن التحويل على صنف وجهاز واحد على الأقل بكمية صالحة');
+        }
+
+        // Delete old stock_transfer_items
+        db.prepare('DELETE FROM stock_transfer_items WHERE transfer_id = ?').run(t.id);
+
+        // Insert new items and move serials to targetToWarehouseId
+        const insertItem = db.prepare(`
+          INSERT INTO stock_transfer_items (transfer_id, product_id, serial_id, serial_number, notes)
+          VALUES (?, ?, ?, ?, '')
+        `);
+
+        for (const s of newSerialRecords) {
+          insertItem.run(t.id, s.product_id, s.serial_id, s.serial_number);
+          updateSerial.run(targetToWarehouseId, s.serial_id);
+        }
+
+        finalTotalItems = newSerialRecords.length;
+      } else {
+        // If items were not changed, but warehouses were changed:
+        // move the rolled-back old items from t.from_warehouse_id to targetToWarehouseId
+        for (const it of oldItems) {
+          if (it.serial_id) {
+            updateSerial.run(targetToWarehouseId, it.serial_id);
+          }
+        }
+      }
+
+      // Update transfer header
+      db.prepare(`
+        UPDATE stock_transfers SET 
+          from_warehouse_id = ?,
+          to_warehouse_id = ?,
+          total_items = ?,
+          notes = ?,
+          transfer_date = COALESCE(?, transfer_date),
+          created_by = COALESCE(?, created_by),
+          manager_approved_by = ?
+        WHERE id = ?
+      `).run(
+        targetFromWarehouseId,
+        targetToWarehouseId,
+        finalTotalItems,
+        notes !== undefined ? notes : t.notes,
+        transfer_date || null,
+        created_by || null,
+        manager_name || 'إدارة المعرض',
+        t.id
+      );
+
+      return { finalTotalItems };
+    });
+
+    const result = updateTx();
+
+    logActivity(
+      req, 
+      'STOCK_TRANSFER_UPDATED', 
+      'stock_transfer', 
+      t.id, 
+      `تعديل إذن التحويل المخزني: ${t.transfer_no} (إجمالي ${result.finalTotalItems} جهاز) بموافقة المدير: ${manager_name || 'إدارة المعرض'}`
     );
 
-    logActivity(req, 'STOCK_TRANSFER_UPDATED', 'stock_transfer', req.params.id, `تعديل إذن التحويل المخزني: ${t.transfer_no} بموافقة المدير: ${manager_name || 'إدارة المعرض'}`);
-    res.json({ success: true, message: 'تم حفظ تعديل إذن التحويل المخزني بنجاح' });
+    res.json({ 
+      success: true, 
+      message: `تم حفظ تعديل إذن التحويل المخزني وتحديث حركة الأرصدة (${result.finalTotalItems} جهاز) بنجاح` 
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 });
 
