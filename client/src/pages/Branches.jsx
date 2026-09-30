@@ -369,6 +369,8 @@ export default function Branches({ settings, currentUser }) {
     try {
       await api.updateStockTransfer(editTransferModal.id, {
         notes: editTransferModal.notes,
+        transfer_date: editTransferModal.transfer_date,
+        created_by: editTransferModal.created_by,
         manager_pin: managerPin,
         manager_name: managerName || currentUser?.name || 'مدير الفرع'
       });
@@ -1426,53 +1428,152 @@ export default function Branches({ settings, currentUser }) {
       {/* ============================================================ */}
       {editTransferModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-xs text-slate-800">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 text-xs text-slate-800 flex flex-col max-h-[92vh]">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
-              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-amber-600" />
-                تعديل إذن التحويل: {editTransferModal.transfer_no}
-              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    تعديل إذن التحويل: {editTransferModal.transfer_no}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">مراجعة بيانات النقل وتعديل الملاحظات والتاريخ واعتماد الإذن</p>
+                </div>
+              </div>
               <button onClick={() => setEditTransferModal(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditTransfer} className="space-y-3">
+            <form onSubmit={handleSaveEditTransfer} className="space-y-4 overflow-y-auto pr-1 flex-1">
+              {/* Transfer Summary Route Info */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs">
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-semibold">من المخزن المصدر:</span>
+                  <span className="font-extrabold text-slate-900 block truncate">{editTransferModal.from_warehouse_name || 'المخزن المصدر'}</span>
+                  <span className="text-[10px] text-slate-400 block font-normal truncate">({editTransferModal.from_branch_name || 'الفرع'})</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-semibold">إلى المخزن المستلم:</span>
+                  <span className="font-extrabold text-emerald-700 block truncate">{editTransferModal.to_warehouse_name || 'المخزن المستقبل'}</span>
+                  <span className="text-[10px] text-slate-400 block font-normal truncate">({editTransferModal.to_branch_name || 'الفرع'})</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-semibold">المسؤول عن النقل:</span>
+                  <span className="font-bold text-slate-800 block truncate">{editTransferModal.created_by || 'الموظف'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-semibold">إجمالي الأجهزة:</span>
+                  <span className="font-extrabold text-blue-900 font-mono block">
+                    {editTransferModal.items?.length || editTransferModal.total_items || 1} جهاز
+                  </span>
+                </div>
+              </div>
+
+              {/* Devices and Serials Included in the Transfer */}
               <div>
-                <label className="block text-slate-600 font-bold mb-1">ملاحظات التحويل</label>
+                <h4 className="font-bold text-slate-800 mb-1.5 flex items-center justify-between text-xs">
+                  <span>الأجهزة والقطع المشمولة في الإذن ({editTransferModal.items?.length || editTransferModal.total_items || 0} جهاز):</span>
+                  <span className="text-[10px] text-slate-500 font-normal">مطابقة السيريالات المحولة</span>
+                </h4>
+                <div className="border border-slate-200 rounded-xl overflow-hidden max-h-40 overflow-y-auto">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
+                      <tr>
+                        <th className="p-2 w-8 text-center border-b border-slate-200">#</th>
+                        <th className="p-2 border-b border-slate-200">الجهاز والموديل</th>
+                        <th className="p-2 border-b border-slate-200">السيريال نمبر</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {editTransferModal.items && editTransferModal.items.length > 0 ? (
+                        editTransferModal.items.map((it, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-bold text-slate-400">{idx + 1}</td>
+                            <td className="p-2 font-bold text-slate-800">
+                              {it.product_name}
+                              {it.model_number && <span className="block text-[10px] text-slate-400 font-mono font-normal">موديل: {it.model_number}</span>}
+                            </td>
+                            <td className="p-2 font-mono font-bold text-blue-700" dir="ltr">
+                              {it.serial_number || 'بدون سيريال'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="3" className="p-3 text-center text-slate-400">
+                            إذن التحويل يشمل {editTransferModal.total_items || 1} قطعة / جهاز
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Editable Fields: Transfer Date, Staff, and Notes */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">تاريخ ووقت التحويل</label>
+                  <input
+                    type="text"
+                    value={editTransferModal.transfer_date || ''}
+                    onChange={(e) => setEditTransferModal({ ...editTransferModal, transfer_date: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold"
+                    placeholder="YYYY-MM-DD HH:MM:SS"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">المسؤول عن النقل والتسجيل</label>
+                  <input
+                    type="text"
+                    value={editTransferModal.created_by || ''}
+                    onChange={(e) => setEditTransferModal({ ...editTransferModal, created_by: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1 text-[11px]">ملاحظات وبيان التحويل</label>
                 <textarea
-                  rows="3"
+                  rows="2"
                   value={editTransferModal.notes || ''}
                   onChange={(e) => setEditTransferModal({ ...editTransferModal, notes: e.target.value })}
+                  placeholder="اكتب ملاحظات التحويل أو سبب التعديل..."
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
                 />
               </div>
 
+              {/* Manager Security Approval Box */}
               <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 space-y-2">
                 <div className="flex items-center gap-1.5 text-amber-900 font-bold">
                   <Lock className="w-4 h-4 text-amber-700" />
-                  <span>موافقة واعتماد المدير (شرط أساسي للتعديل)</span>
+                  <span>موافقة واعتماد المدير (شرط أساسي لحفظ التعديلات)</span>
                 </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">اسم المدير المعتمد *</label>
-                  <input
-                    type="text"
-                    required
-                    value={managerName}
-                    onChange={(e) => setManagerName(e.target.value)}
-                    className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">رمز مرور المدير (PIN) *</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="رمز PIN المدير..."
-                    value={managerPin}
-                    onChange={(e) => setManagerPin(e.target.value)}
-                    className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-mono font-bold"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1 text-[11px]">اسم المدير المعتمد *</label>
+                    <input
+                      type="text"
+                      required
+                      value={managerName}
+                      onChange={(e) => setManagerName(e.target.value)}
+                      className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-bold text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1 text-[11px]">رمز مرور المدير (PIN) *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="رمز PIN المدير..."
+                      value={managerPin}
+                      onChange={(e) => setManagerPin(e.target.value)}
+                      className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-mono font-bold text-xs"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1480,15 +1581,15 @@ export default function Branches({ settings, currentUser }) {
                 <button
                   type="button"
                   onClick={() => setEditTransferModal(null)}
-                  className="px-4 py-2 font-bold cursor-pointer"
+                  className="px-4 py-2 font-bold cursor-pointer text-slate-600 hover:text-slate-800"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer shadow-md"
+                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer shadow-md transition-all"
                 >
-                  حفظ التعديل
+                  حفظ التعديلات واعتماد الإذن
                 </button>
               </div>
             </form>

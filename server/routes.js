@@ -2846,7 +2846,7 @@ router.post('/transfers/stock', (req, res) => {
 
 router.put('/transfers/stock/:id', (req, res) => {
   try {
-    const { notes, manager_pin, manager_name } = req.body;
+    const { notes, transfer_date, created_by, manager_pin, manager_name } = req.body;
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get() || {};
     const validPin = settings.manager_override_pin || '1234';
 
@@ -2857,8 +2857,20 @@ router.put('/transfers/stock/:id', (req, res) => {
     const t = db.prepare('SELECT * FROM stock_transfers WHERE id = ?').get(req.params.id);
     if (!t) return res.status(404).json({ error: 'إذن التحويل غير موجود' });
 
-    db.prepare('UPDATE stock_transfers SET notes = ?, manager_approved_by = ? WHERE id = ?')
-      .run(notes || t.notes, manager_name || 'إدارة المعرض', req.params.id);
+    db.prepare(`
+      UPDATE stock_transfers SET 
+        notes = ?,
+        transfer_date = COALESCE(?, transfer_date),
+        created_by = COALESCE(?, created_by),
+        manager_approved_by = ?
+      WHERE id = ?
+    `).run(
+      notes !== undefined ? notes : t.notes,
+      transfer_date || null,
+      created_by || null,
+      manager_name || 'إدارة المعرض',
+      req.params.id
+    );
 
     logActivity(req, 'STOCK_TRANSFER_UPDATED', 'stock_transfer', req.params.id, `تعديل إذن التحويل المخزني: ${t.transfer_no} بموافقة المدير: ${manager_name || 'إدارة المعرض'}`);
     res.json({ success: true, message: 'تم حفظ تعديل إذن التحويل المخزني بنجاح' });
