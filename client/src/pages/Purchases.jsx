@@ -3,6 +3,7 @@ import {
   ShoppingBag, 
   Truck, 
   Plus, 
+  Minus,
   Search, 
   CheckCircle2, 
   AlertCircle, 
@@ -18,7 +19,11 @@ import {
   ArrowRight,
   Filter,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  Printer,
+  Trash2,
+  Boxes,
+  Hash
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -53,6 +58,7 @@ export default function Purchases({ settings, currentUser }) {
 
   const [currentLineItem, setCurrentLineItem] = useState({
     product_id: '',
+    quantity: 1,
     cost_price: '',
     serialsText: '' // Comma or newline separated serials
   });
@@ -128,35 +134,103 @@ export default function Purchases({ settings, currentUser }) {
 
   const handleAddLineItem = () => {
     if (!currentLineItem.product_id) {
-      alert('الرجاء اختيار الجهاز');
+      alert('الرجاء اختيار الجهاز الكهربائي أولاً');
       return;
     }
     const product = products.find(p => p.id === Number(currentLineItem.product_id));
     if (!product) return;
 
+    const qty = Math.max(1, parseInt(currentLineItem.quantity) || 1);
+    const cost = (Number(currentLineItem.cost_price) >= 0 && currentLineItem.cost_price !== '')
+      ? Number(currentLineItem.cost_price)
+      : (Number(product.cost_price) || 0);
+
     // Parse serials
     const serialList = currentLineItem.serialsText
-      .split(/[\n,]+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+      ? currentLineItem.serialsText
+          .split(/[\n,]+/)
+          .map(s => s.trim())
+          .filter(s => s.length > 0)
+      : [];
 
-    const cost = Number(currentLineItem.cost_price) || product.cost_price;
+    // Complete serials up to qty if fewer provided
+    const finalSerials = [...serialList];
+    while (finalSerials.length < qty) {
+      const rnd = Math.floor(1000 + Math.random() * 9000);
+      const autoSerial = `SN-${product.model_number || 'APP'}-${Date.now().toString().slice(-4)}${finalSerials.length + 1}-${rnd}`;
+      finalSerials.push(autoSerial);
+    }
 
-    setPurchaseForm(prev => ({
-      ...prev,
-      items: [
-        ...prev.items,
-        {
-          product_id: product.id,
-          product_name: product.name,
-          model_number: product.model_number,
-          cost_price: cost,
-          serials: serialList
+    setPurchaseForm(prev => {
+      const existingIdx = prev.items.findIndex(it => it.product_id === product.id && Number(it.cost_price) === cost);
+      if (existingIdx > -1) {
+        const updated = [...prev.items];
+        const existing = updated[existingIdx];
+        const newQty = existing.quantity + qty;
+        const newSerials = [...existing.serials, ...finalSerials];
+        updated[existingIdx] = {
+          ...existing,
+          quantity: newQty,
+          serials: newSerials,
+          total_cost: newQty * cost
+        };
+        return { ...prev, items: updated };
+      } else {
+        return {
+          ...prev,
+          items: [
+            ...prev.items,
+            {
+              product_id: product.id,
+              product_name: product.name,
+              model_number: product.model_number,
+              cost_price: cost,
+              quantity: qty,
+              total_cost: qty * cost,
+              serials: finalSerials
+            }
+          ]
+        };
+      }
+    });
+
+    setCurrentLineItem({ product_id: '', quantity: 1, cost_price: '', serialsText: '' });
+  };
+
+  const handleUpdateItemQuantity = (index, newQty) => {
+    const qty = Math.max(1, parseInt(newQty) || 1);
+    setPurchaseForm(prev => {
+      const updated = [...prev.items];
+      const item = { ...updated[index] };
+      const currentSerials = [...(item.serials || [])];
+
+      if (qty > currentSerials.length) {
+        for (let i = currentSerials.length; i < qty; i++) {
+          const rnd = Math.floor(1000 + Math.random() * 9000);
+          currentSerials.push(`SN-${item.model_number || 'APP'}-${Date.now().toString().slice(-4)}${i + 1}-${rnd}`);
         }
-      ]
-    }));
+      } else if (qty < currentSerials.length) {
+        currentSerials.splice(qty);
+      }
 
-    setCurrentLineItem({ product_id: '', cost_price: '', serialsText: '' });
+      item.quantity = qty;
+      item.serials = currentSerials;
+      item.total_cost = qty * item.cost_price;
+      updated[index] = item;
+      return { ...prev, items: updated };
+    });
+  };
+
+  const handleUpdateItemCost = (index, newCost) => {
+    const cost = Math.max(0, Number(newCost) || 0);
+    setPurchaseForm(prev => {
+      const updated = [...prev.items];
+      const item = { ...updated[index] };
+      item.cost_price = cost;
+      item.total_cost = item.quantity * cost;
+      updated[index] = item;
+      return { ...prev, items: updated };
+    });
   };
 
   const handleRemoveLineItem = (index) => {
@@ -167,7 +241,11 @@ export default function Purchases({ settings, currentUser }) {
   };
 
   const calculatePurchaseTotal = () => {
-    return purchaseForm.items.reduce((sum, it) => sum + (it.cost_price * (it.serials.length || 1)), 0);
+    return purchaseForm.items.reduce((sum, it) => sum + (Number(it.cost_price) * (Number(it.quantity) || 1)), 0);
+  };
+
+  const calculateTotalQuantity = () => {
+    return purchaseForm.items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
   };
 
   const handleSavePurchase = async (e) => {
@@ -177,34 +255,19 @@ export default function Purchases({ settings, currentUser }) {
       return;
     }
     if (purchaseForm.items.length === 0) {
-      alert('يجب إضافة أجهزة لفاتورة الشراء');
+      alert('يجب إضافة أجهزة وكميات لفاتورة الشراء');
       return;
     }
 
     const total = calculatePurchaseTotal();
     const paid = purchaseForm.payment_type === 'cash' ? total : Number(purchaseForm.paid_amount) || 0;
 
-    // Expand items to format expected by backend: array of { product_id, serial_number, cost_price }
-    const expandedItems = [];
-    for (const it of purchaseForm.items) {
-      if (it.serials.length > 0) {
-        for (const sn of it.serials) {
-          expandedItems.push({
-            product_id: it.product_id,
-            serial_number: sn,
-            cost_price: it.cost_price
-          });
-        }
-      } else {
-        // Auto-generate serial if empty
-        const autoSerial = `SN-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
-        expandedItems.push({
-          product_id: it.product_id,
-          serial_number: autoSerial,
-          cost_price: it.cost_price
-        });
-      }
-    }
+    const itemsPayload = purchaseForm.items.map(it => ({
+      product_id: it.product_id,
+      quantity: it.quantity,
+      cost_price: it.cost_price,
+      serials: it.serials
+    }));
 
     try {
       await api.createPurchase({
@@ -214,12 +277,13 @@ export default function Purchases({ settings, currentUser }) {
         subtotal: total,
         discount: 0,
         total: total,
+        total_amount: total,
         paid_amount: paid,
-        items: expandedItems,
+        items: itemsPayload,
         notes: purchaseForm.notes
       });
 
-      alert('تم تسجيل فاتورة الشراء وتوريد الأجهزة للمخزن بنجاح');
+      alert('تم تسجيل فاتورة الشراء وتوريد الكميات والأجهزة للمخزن بنجاح');
       setShowNewPurchaseModal(false);
       setPurchaseForm({
         supplier_id: suppliers[0]?.id || '',
@@ -573,23 +637,36 @@ export default function Purchases({ settings, currentUser }) {
               </div>
 
               {/* Line Item Adder */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 text-xs">
-                <span className="font-bold text-slate-700 block">إضافة أجهزة للفاتورة:</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="sm:col-span-2">
-                    <label className="block text-[11px] text-slate-500 mb-1">الجهاز الكهربائي</label>
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <Boxes className="w-4 h-4 text-blue-600" />
+                    إضافة جهاز وتحديد الكميات الواردة:
+                  </span>
+                  {currentLineItem.product_id && (
+                    <span className="text-[11px] text-blue-800 font-bold bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                      إجمالي البند: {((Number(currentLineItem.quantity) || 1) * (Number(currentLineItem.cost_price) || 0)).toLocaleString()} {currency}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                  {/* Product: 5 cols */}
+                  <div className="sm:col-span-5">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">الجهاز الكهربائي *</label>
                     <select
                       value={currentLineItem.product_id}
                       onChange={(e) => {
                         const pId = e.target.value;
                         const pr = products.find(p => p.id === Number(pId));
-                        setCurrentLineItem({
-                          ...currentLineItem,
+                        setCurrentLineItem(prev => ({
+                          ...prev,
                           product_id: pId,
-                          cost_price: pr ? pr.cost_price : ''
-                        });
+                          cost_price: pr ? pr.cost_price : '',
+                          quantity: prev.quantity || 1
+                        }));
                       }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                     >
                       <option value="">اختر الجهاز الكهربائي...</option>
                       {products.map(p => (
@@ -598,75 +675,216 @@ export default function Purchases({ settings, currentUser }) {
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">سعر التكلفة للقطعة ({currency})</label>
+                  {/* Quantity: 2 cols */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">الكمية الواردة *</label>
+                    <div className="flex items-center border border-slate-300 rounded-xl bg-white overflow-hidden shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentLineItem(prev => ({ ...prev, quantity: Math.max(1, (parseInt(prev.quantity) || 1) - 1) }))}
+                        className="px-2 py-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition cursor-pointer"
+                        title="إنقاص الكمية"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        value={currentLineItem.quantity}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          setCurrentLineItem(prev => ({ ...prev, quantity: val }));
+                        }}
+                        className="w-full text-center font-mono font-black text-slate-800 text-xs py-2 focus:outline-hidden"
+                        placeholder="1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCurrentLineItem(prev => ({ ...prev, quantity: (parseInt(prev.quantity) || 1) + 1 }))}
+                        className="px-2 py-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition cursor-pointer"
+                        title="زيادة الكمية"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cost Price: 3 cols */}
+                  <div className="sm:col-span-3">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">سعر التكلفة للقطعة ({currency}) *</label>
                     <input
                       type="number"
                       placeholder="0.00"
                       value={currentLineItem.cost_price}
                       onChange={(e) => setCurrentLineItem({ ...currentLineItem, cost_price: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                     />
+                  </div>
+
+                  {/* Add Button: 2 cols */}
+                  <div className="sm:col-span-2">
+                    <button
+                      type="button"
+                      onClick={handleAddLineItem}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow transition cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>إضافة الصنف</span>
+                    </button>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    أرقام السيريال للأجهزة الواردة (افصل بفواصل أو أسطر جديدة - أو اتركها فارغة للتوليد الآلي)
-                  </label>
+                {/* Serials Text Input */}
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <div className="flex flex-wrap items-center justify-between gap-1 mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700">
+                      أرقام السيريال (Serial Numbers) للأجهزة:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-500">
+                        الكمية المطلوبة: <strong className="font-mono text-blue-700">{currentLineItem.quantity || 1} جهاز</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const product = products.find(p => p.id === Number(currentLineItem.product_id));
+                          const qty = Math.max(1, parseInt(currentLineItem.quantity) || 1);
+                          const autoList = [];
+                          for (let i = 0; i < qty; i++) {
+                            autoList.push(`SN-${product?.model_number || 'APP'}-${Date.now().toString().slice(-4)}${i + 1}-${Math.floor(100 + Math.random() * 900)}`);
+                          }
+                          setCurrentLineItem(prev => ({ ...prev, serialsText: autoList.join('\n') }));
+                        }}
+                        className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-0.5 rounded cursor-pointer transition border border-slate-300"
+                      >
+                        توليد سيريالات تلقائية
+                      </button>
+                    </div>
+                  </div>
                   <textarea
                     rows={2}
-                    placeholder="SN100293, SN100294, SN100295..."
+                    placeholder="مثال: SN-LG-98211, SN-LG-98212 (أو اتركها فارغة ليقوم النظام بإنشائها آلياً فوراً)"
                     value={currentLineItem.serialsText}
-                    onChange={(e) => setCurrentLineItem({ ...currentLineItem, serialsText: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-mono text-xs"
+                    onChange={(e) => {
+                      const text = e.target.value;
+                      const count = text.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0).length;
+                      setCurrentLineItem(prev => ({
+                        ...prev,
+                        serialsText: text,
+                        quantity: count > prev.quantity ? count : prev.quantity
+                      }));
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-mono text-xs focus:bg-white focus:border-blue-400 focus:outline-hidden"
                     dir="ltr"
                   />
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleAddLineItem}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl cursor-pointer"
-                  >
-                    + إضافة الجهاز للفاتورة
-                  </button>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    * يمكنك لصق أرقام السيريال دفعة واحدة أو تركها فارغة ليقوم النظام بتوليدها تلقائياً بعدد الكمية المحددة.
+                  </p>
                 </div>
               </div>
 
               {/* Items List */}
-              <div className="border border-slate-200 rounded-2xl p-3 bg-white text-xs">
-                <span className="font-bold text-slate-700 block mb-2">الأجهزة المسجلة بالفاتورة:</span>
+              <div className="border border-slate-200 rounded-2xl p-3.5 bg-white text-xs">
+                <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-100">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    الأجهزة والكميات المسجلة بالفاتورة ({purchaseForm.items.length} أصناف):
+                  </span>
+                  {purchaseForm.items.length > 0 && (
+                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-black px-2.5 py-0.5 rounded-lg text-[11px]">
+                      إجمالي الأجهزة: {calculateTotalQuantity()} جهاز
+                    </span>
+                  )}
+                </div>
+
                 {purchaseForm.items.length === 0 ? (
-                  <p className="text-center py-4 text-slate-400">لم تقم بإضافة أي أجهزة بعد</p>
+                  <div className="text-center py-6 text-slate-400">
+                    <Boxes className="w-8 h-8 mx-auto mb-1.5 opacity-30 text-slate-400" />
+                    <p className="font-bold">لم تقم بإضافة أي أجهزة بعد</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">اختر الصنف وحدد الكمية وسعر الشراء ثم اضغط "إضافة الصنف"</p>
+                  </div>
                 ) : (
-                  <div className="space-y-2">
-                    {purchaseForm.items.map((it, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                        <div>
-                          <span className="font-bold text-slate-900 block">{it.product_name}</span>
-                          <span className="text-[10px] text-slate-500 font-mono">موديل: {it.model_number} | سعر التكلفة: {it.cost_price} {currency}</span>
-                          {it.serials.length > 0 && (
-                            <span className="text-[10px] text-blue-700 font-mono block mt-0.5" dir="ltr">
-                              السيريالات: {it.serials.join(', ')}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="bg-blue-100 text-blue-800 font-black px-2.5 py-1 rounded-lg font-mono">
-                            {it.serials.length || 1} جهاز = {Number(it.cost_price * (it.serials.length || 1)).toLocaleString()} {currency}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLineItem(idx)}
-                            className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2">#</th>
+                          <th className="p-2">الجهاز والموديل</th>
+                          <th className="p-2 text-center">الكمية</th>
+                          <th className="p-2 text-left">سعر التكلفة ({currency})</th>
+                          <th className="p-2 text-left">إجمالي التكلفة ({currency})</th>
+                          <th className="p-2 text-center">السيريالات</th>
+                          <th className="p-2 text-center">حذف</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {purchaseForm.items.map((it, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/70 transition">
+                            <td className="p-2 text-slate-400 font-bold">{idx + 1}</td>
+                            <td className="p-2">
+                              <span className="font-bold text-slate-900 block">{it.product_name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">موديل: {it.model_number}</span>
+                            </td>
+                            <td className="p-2 text-center">
+                              <div className="inline-flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateItemQuantity(idx, it.quantity - 1)}
+                                  className="px-1.5 py-1 text-slate-500 hover:bg-slate-100 transition cursor-pointer"
+                                  title="إنقاص الكمية"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={it.quantity}
+                                  onChange={(e) => handleUpdateItemQuantity(idx, e.target.value)}
+                                  className="w-12 text-center font-mono font-black text-blue-900 text-xs py-1 focus:outline-hidden"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateItemQuantity(idx, it.quantity + 1)}
+                                  className="px-1.5 py-1 text-slate-500 hover:bg-slate-100 transition cursor-pointer"
+                                  title="زيادة الكمية"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-2 text-left">
+                              <input
+                                type="number"
+                                min="0"
+                                value={it.cost_price}
+                                onChange={(e) => handleUpdateItemCost(idx, e.target.value)}
+                                className="w-20 text-left font-mono font-bold text-slate-800 border border-slate-200 rounded px-1.5 py-0.5 text-xs bg-slate-50 focus:bg-white"
+                                dir="ltr"
+                              />
+                            </td>
+                            <td className="p-2 text-left font-mono font-black text-slate-900" dir="ltr">
+                              {(Number(it.cost_price) * Number(it.quantity)).toLocaleString()}
+                            </td>
+                            <td className="p-2 text-center">
+                              <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 font-mono font-bold px-2 py-0.5 rounded text-[10px] border border-blue-100" title={it.serials?.join(', ')}>
+                                <Barcode className="w-3 h-3" />
+                                {it.serials?.length || it.quantity} سيريال
+                              </span>
+                            </td>
+                            <td className="p-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveLineItem(idx)}
+                                className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition cursor-pointer"
+                                title="حذف هذا الصنف"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
@@ -728,57 +946,193 @@ export default function Purchases({ settings, currentUser }) {
         </div>
       )}
 
-      {/* MODAL: VIEW PURCHASE DETAILS */}
+      {/* MODAL: VIEW PURCHASE DETAILS & OFFICIAL PRINT */}
       {selectedPurchase && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+          <div id="printable-area" className="printable-area bg-white rounded-3xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] flex flex-col print:max-h-none print:shadow-none print:border-none print:p-0">
+            {/* Formal Document Header for Print */}
+            <div className="hidden print:block border-b-2 border-slate-900 pb-3 mb-4 text-right">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">{settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية'}</h2>
+                  <p className="text-[10px] text-slate-500 font-bold">{settings?.tagline || 'تجارة وتوزيع الأجهزة الكهربائية والمنزلية'}</p>
+                  <p className="text-[9px] text-slate-400">س.ت: {settings?.commercial_reg || '198425'} | هاتف: {settings?.phone || '01023456789'}</p>
+                </div>
+                <div className="text-left font-mono text-[10px] space-y-0.5" dir="ltr">
+                  <p>Invoice No: <strong className="text-xs text-blue-900">{selectedPurchase.invoice_no}</strong></p>
+                  <p>Date: {selectedPurchase.created_at?.slice(0, 10)}</p>
+                  <p>Warehouse: {selectedPurchase.warehouse_name}</p>
+                </div>
+              </div>
+              <div className="text-center py-1.5 bg-slate-100 border border-slate-300 rounded font-black text-sm text-slate-900">
+                إذن استلام وتوريد بضائع وأجهزة جديدة (فاتورة شراء معتمدة)
+              </div>
+            </div>
+
+            {/* Screen Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4 no-print">
               <div>
                 <h3 className="font-black text-base text-slate-800">تفاصيل فاتورة التوريد والشراء</h3>
                 <p className="text-xs text-blue-700 font-mono font-bold mt-0.5">{selectedPurchase.invoice_no}</p>
               </div>
-              <button onClick={() => setSelectedPurchase(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 cursor-pointer transition"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>طباعة إذن التوريد</span>
+                </button>
+                <button onClick={() => setSelectedPurchase(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4 flex-1 overflow-y-auto pr-1 text-xs">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+            <div className="space-y-4 flex-1 overflow-y-auto pr-1 text-xs print:overflow-visible">
+              {/* Info Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200 print:bg-white print:border-slate-300">
                 <div>
-                  <span className="text-slate-400 block text-[11px]">المورد:</span>
-                  <span className="font-bold text-slate-900">{selectedPurchase.supplier_name} ({selectedPurchase.supplier_company})</span>
+                  <span className="text-slate-400 block text-[10px]">المورد / الشركة:</span>
+                  <span className="font-bold text-slate-900 block">{selectedPurchase.supplier_name || 'مورد عام'}</span>
+                  {selectedPurchase.supplier_company && (
+                    <span className="text-[10px] text-slate-500 font-mono block">{selectedPurchase.supplier_company}</span>
+                  )}
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">المستودع المستلم:</span>
-                  <span className="font-bold text-slate-900">{selectedPurchase.warehouse_name}</span>
+                  <span className="text-slate-400 block text-[10px]">المستودع المستلم:</span>
+                  <span className="font-bold text-slate-900 block">{selectedPurchase.warehouse_name || 'المستودع الرئيسي'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">إجمالي الفاتورة:</span>
-                  <span className="font-black text-slate-900 font-mono">{Number(selectedPurchase.total).toLocaleString()} {currency}</span>
+                  <span className="text-slate-400 block text-[10px]">إجمالي الأجهزة والكميات:</span>
+                  <span className="font-black text-blue-800 font-mono text-sm block">
+                    {selectedPurchase.items?.length || 0} جهاز
+                  </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">المدفوع للمورد:</span>
-                  <span className="font-black text-emerald-700 font-mono">{Number(selectedPurchase.paid_amount).toLocaleString()} {currency}</span>
+                  <span className="text-slate-400 block text-[10px]">إجمالي الفاتورة:</span>
+                  <span className="font-black text-slate-900 font-mono text-sm block" dir="ltr">
+                    {Number(selectedPurchase.total_amount ?? selectedPurchase.total ?? 0).toLocaleString()} {currency}
+                  </span>
                 </div>
               </div>
 
+              {/* Summary Items Table by Product & Quantity */}
               <div>
-                <span className="font-bold text-slate-700 block mb-2">الأجهزة والسيريالات الواردة ({selectedPurchase.items?.length || 0}):</span>
-                <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                <span className="font-bold text-slate-800 block mb-2 flex items-center gap-1.5">
+                  <Boxes className="w-4 h-4 text-blue-600 no-print" />
+                  <span>بيان كميات الأصناف الواردة بالفاتورة:</span>
+                </span>
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">#</th>
+                        <th className="p-2.5">اسم الجهاز والموديل</th>
+                        <th className="p-2.5 text-center">الكمية المستلمة</th>
+                        <th className="p-2.5 text-left">سعر الشراء للقطعة</th>
+                        <th className="p-2.5 text-left">إجمالي التكلفة ({currency})</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const summary = selectedPurchase.summary_items && selectedPurchase.summary_items.length > 0
+                          ? selectedPurchase.summary_items
+                          : (() => {
+                              const map = {};
+                              for (const it of (selectedPurchase.items || [])) {
+                                const key = `${it.product_id}_${it.cost_price}`;
+                                if (!map[key]) {
+                                  map[key] = {
+                                    product_id: it.product_id,
+                                    product_name: it.product_name,
+                                    model_number: it.model_number,
+                                    brand_name: it.brand_name,
+                                    cost_price: Number(it.cost_price) || 0,
+                                    quantity: 0
+                                  };
+                                }
+                                map[key].quantity += 1;
+                              }
+                              return Object.values(map);
+                            })();
+
+                        return summary.map((s, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/70 transition">
+                            <td className="p-2.5 text-slate-400 font-bold">{idx + 1}</td>
+                            <td className="p-2.5">
+                              <span className="font-bold text-slate-900 block">{s.product_name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                موديل: {s.model_number} {s.brand_name ? `| ماركة: ${s.brand_name}` : ''}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <span className="bg-blue-100 text-blue-800 font-black px-2.5 py-0.5 rounded-lg font-mono text-xs">
+                                {s.quantity} قطع
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-left font-mono font-bold text-slate-800" dir="ltr">
+                              {Number(s.cost_price).toLocaleString()} {currency}
+                            </td>
+                            <td className="p-2.5 text-left font-mono font-black text-slate-900" dir="ltr">
+                              {(Number(s.cost_price) * Number(s.quantity)).toLocaleString()} {currency}
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                    <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
+                      <tr>
+                        <td colSpan={2} className="p-2.5 text-slate-700">الإجمالي العام</td>
+                        <td className="p-2.5 text-center font-mono font-black text-blue-900">
+                          {selectedPurchase.items?.length || 0} جهاز
+                        </td>
+                        <td></td>
+                        <td className="p-2.5 text-left font-mono font-black text-slate-900" dir="ltr">
+                          {Number(selectedPurchase.total_amount ?? selectedPurchase.total ?? 0).toLocaleString()} {currency}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Detailed Serials List */}
+              <div>
+                <span className="font-bold text-slate-700 block mb-2">
+                  قائمة أرقام السيريال المسجلة بالمخزن ({selectedPurchase.items?.length || 0} سيريال):
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto p-1 print:max-h-none print:overflow-visible">
                   {selectedPurchase.items?.map((it, idx) => (
-                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between">
-                      <div>
-                        <span className="font-bold text-slate-900">{it.product_name}</span>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-blue-700 font-bold" dir="ltr">
-                            {it.serial_number}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-mono">موديل: {it.model_number}</span>
-                        </div>
+                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex items-center justify-between">
+                      <div className="overflow-hidden">
+                        <span className="font-bold text-slate-900 block truncate">{it.product_name}</span>
+                        <span className="font-mono text-blue-700 font-bold text-[11px]" dir="ltr">
+                          {it.serial_number}
+                        </span>
                       </div>
-                      <span className="font-mono font-bold text-slate-800">{Number(it.cost_price).toLocaleString()} {currency}</span>
+                      <span className="font-mono text-[10px] text-slate-500 font-bold">
+                        {Number(it.cost_price).toLocaleString()} {currency}
+                      </span>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Print Signatures & Seals */}
+              <div className="hidden print:grid grid-cols-3 gap-6 text-center text-xs pt-8 mt-6 border-t-2 border-slate-800">
+                <div>
+                  <p className="font-bold text-slate-900 mb-8">أمين المخزن المستلم</p>
+                  <p className="border-t border-dashed border-slate-400 pt-1 text-slate-500">التوقيع: ............................</p>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 mb-8">مندوب الشركة الموردة</p>
+                  <p className="border-t border-dashed border-slate-400 pt-1 text-slate-500">التوقيع: ............................</p>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 mb-8">اعتماد الإدارة والمراجع المالي</p>
+                  <p className="border-t border-dashed border-slate-400 pt-1 text-slate-500">التوقيع والختم: ............................</p>
                 </div>
               </div>
             </div>

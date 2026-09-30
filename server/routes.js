@@ -1906,36 +1906,52 @@ router.get('/reports/advanced', (req, res) => {
 // ==========================================
 router.post('/purchases', (req, res) => {
   try {
-    const { supplier_id, invoice_no, total_amount, paid_amount, items, notes } = req.body;
-    // items: array of { product_id, cost_price, serials: ['SER1', 'SER2', ...] }
+    const { supplier_id, warehouse_id, invoice_no, total, total_amount, paid_amount, items, notes } = req.body;
 
     const purchaseTransaction = db.transaction(() => {
       const invNo = invoice_no || generateInvoiceNo('PUR');
-      const total = Number(total_amount) || 0;
+      const finalTotal = Number(total ?? total_amount) || 0;
       const paid = Number(paid_amount) || 0;
-      const remaining = total - paid;
+      const remaining = finalTotal - paid;
+      const targetWarehouseId = Number(warehouse_id) || 1;
+      const cairoNow = getCairoDateTime().replace('T', ' ');
 
       const info = db.prepare(`
-        INSERT INTO purchases (invoice_no, supplier_id, total_amount, paid_amount, remaining_amount, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(invNo, supplier_id || null, total, paid, remaining, notes || '');
+        INSERT INTO purchases (invoice_no, supplier_id, warehouse_id, total_amount, paid_amount, remaining_amount, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(invNo, supplier_id || null, targetWarehouseId, finalTotal, paid, remaining, notes || '', cairoNow);
 
       const purchaseId = info.lastInsertRowid;
 
-      // Add serials for each product
+      // Add serials for each product based on quantity and serials
       if (items && Array.isArray(items)) {
         const insertSerial = db.prepare(`
-          INSERT OR IGNORE INTO product_serials (product_id, serial_number, status, cost_price, purchase_id)
-          VALUES (?, ?, 'in_stock', ?, ?)
+          INSERT OR IGNORE INTO product_serials (product_id, warehouse_id, serial_number, status, cost_price, purchase_id, created_at)
+          VALUES (?, ?, ?, 'in_stock', ?, ?, ?)
         `);
 
         for (const item of items) {
-          if (item.serials && Array.isArray(item.serials)) {
-            for (const s of item.serials) {
-              if (s && s.trim()) {
-                insertSerial.run(item.product_id, s.trim(), Number(item.cost_price) || 0, purchaseId);
-              }
+          const productId = Number(item.product_id);
+          const cost = Number(item.cost_price) || 0;
+
+          // If item is sent as a flat single serial: { product_id, serial_number, cost_price }
+          if (item.serial_number && typeof item.serial_number === 'string') {
+            insertSerial.run(productId, targetWarehouseId, item.serial_number.trim(), cost, purchaseId, cairoNow);
+            continue;
+          }
+
+          // If item has quantity and/or serials array
+          const givenSerials = Array.isArray(item.serials) ? item.serials.map(s => String(s).trim()).filter(Boolean) : [];
+          const quantity = Math.max(1, Number(item.quantity) || givenSerials.length || 1);
+
+          for (let i = 0; i < quantity; i++) {
+            let sn = givenSerials[i];
+            if (!sn) {
+              const datePart = getCairoDate().replace(/-/g, '');
+              const rnd = Math.floor(1000 + Math.random() * 9000);
+              sn = `SN-${datePart}-${productId}-${rnd}-${i + 1}`;
             }
+            insertSerial.run(productId, targetWarehouseId, sn, cost, purchaseId, cairoNow);
           }
         }
       }
@@ -1955,11 +1971,13 @@ router.post('/purchases', (req, res) => {
         `).run(remaining, supplier_id);
       }
 
+      logActivity(req, 'PURCHASE_CREATED', 'purchase', purchaseId, `تسجيل فاتورة توريد أجهزة برقم ${invNo} بقيمة ${finalTotal} ج.م ومسدد ${paid} ج.م`);
+
       return { purchaseId, invoiceNo: invNo };
     });
 
     const result = purchaseTransaction();
-    res.json({ success: true, ...result, message: 'تم تسجيل فاتورة الشراء واستلام الأجهزة بالسيريال بنجاح' });
+    res.json({ success: true, ...result, message: 'تم تسجيل فاتورة الشراء واستلام الأجهزة وتوريد الكميات للمخزن بنجاح' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3168,6 +3186,7 @@ router.get('/purchases', (req, res) => {
     let query = `
       SELECT 
         p.*,
+        p.total_amount as total,
         s.name as supplier_name,
         s.company as supplier_company,
         s.phone as supplier_phone,
@@ -3205,6 +3224,7 @@ router.get('/purchases/:id', (req, res) => {
     const purchase = db.prepare(`
       SELECT 
         p.*,
+        p.total_amount as total,
         s.name as supplier_name,
         s.company as supplier_company,
         s.phone as supplier_phone,
@@ -3223,6 +3243,25 @@ router.get('/purchases/:id', (req, res) => {
       JOIN products pr ON s.product_id = pr.id
       LEFT JOIN brands b ON pr.brand_id = b.id
       WHERE s.purchase_id = ?
+      ORDER BY s.id ASC
+    `).all(req.params.id);
+
+    // Group items into product-level summary with quantity
+    purchase.summary_items = db.prepare(`
+      SELECT 
+        s.product_id,
+        pr.name as product_name,
+        pr.model_number,
+        b.name as brand_name,
+        COUNT(*) as quantity,
+        s.cost_price,
+        (COUNT(*) * s.cost_price) as total_cost,
+        GROUP_CONCAT(s.serial_number, ', ') as serial_numbers
+      FROM product_serials s
+      JOIN products pr ON s.product_id = pr.id
+      LEFT JOIN brands b ON pr.brand_id = b.id
+      WHERE s.purchase_id = ?
+      GROUP BY s.product_id, s.cost_price
     `).all(req.params.id);
 
     res.json(purchase);
