@@ -956,7 +956,7 @@ export default function Purchases({ settings, currentUser }) {
                 <div>
                   <h2 className="text-base font-black text-slate-900">{settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية'}</h2>
                   <p className="text-[10px] text-slate-500 font-bold">{settings?.tagline || 'تجارة وتوزيع الأجهزة الكهربائية والمنزلية'}</p>
-                  <p className="text-[9px] text-slate-400">س.ت: {settings?.commercial_reg || '198425'} | هاتف: {settings?.phone || '01023456789'}</p>
+                  <p className="text-[9px] text-slate-500">السجل التجاري (س.ت): <span className="font-mono font-bold">{settings?.commercial_reg || '198425'}</span> | البطاقة الضريبية (ب.ض): <span className="font-mono font-bold">{settings?.tax_number || '654-321-987'}</span> | هاتف: {settings?.phone || '01023456789'}</p>
                 </div>
                 <div className="text-left font-mono text-[10px] space-y-0.5" dir="ltr">
                   <p>Invoice No: <strong className="text-xs text-blue-900">{selectedPurchase.invoice_no}</strong></p>

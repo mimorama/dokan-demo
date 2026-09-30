@@ -298,7 +298,10 @@ ${publicLink}
                   📞 {currentSale.branch_phone || settings?.phone || '01023456789'}
                 </p>
                 {settings?.commercial_reg && (
-                  <p className="text-[8px] text-gray-500">س.ت: {settings?.commercial_reg} | ب.ض: {settings?.tax_number}</p>
+                  <p className="text-[8.5px] text-gray-700">السجل التجاري (س.ت): <span className="font-mono font-bold">{settings.commercial_reg}</span></p>
+                )}
+                {settings?.tax_number && (
+                  <p className="text-[8.5px] text-gray-700">البطاقة الضريبية (ب.ض): <span className="font-mono font-bold">{settings.tax_number}</span></p>
                 )}
               </div>
 
@@ -459,10 +462,19 @@ ${publicLink}
                       </p>
                     </div>
                   </div>
-                  <div className="text-[9.5px] text-slate-500 font-medium space-y-0.5 flex flex-wrap gap-x-4">
-                    <span>📍 {currentSale.branch_address || settings?.address || 'شارع الأزهر - القاهرة'}</span>
-                    <span>📞 {currentSale.branch_phone || settings?.phone || '01023456789'} {settings?.phone2 && `| ${settings?.phone2}`}</span>
-                    {settings?.commercial_reg && <span>س.ت: {settings?.commercial_reg} | ب.ض: {settings?.tax_number}</span>}
+                  <div className="text-[9.5px] text-slate-600 font-medium space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-x-4">
+                      <span>📍 {currentSale.branch_address || settings?.address || 'شارع الأزهر - القاهرة'}</span>
+                      <span>📞 {currentSale.branch_phone || settings?.phone || '01023456789'} {settings?.phone2 && `| ${settings?.phone2}`}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 pt-0.5 text-slate-700">
+                      {settings?.commercial_reg && (
+                        <span>السجل التجاري (س.ت): <strong className="font-mono font-bold text-slate-900">{settings.commercial_reg}</strong></span>
+                      )}
+                      {settings?.tax_number && (
+                        <span>البطاقة الضريبية (ب.ض): <strong className="font-mono font-bold text-slate-900">{settings.tax_number}</strong></span>
+                      )}
+                    </div>
                   </div>
                 </div>
 

@@ -298,24 +298,44 @@ export default function Settings({ onSettingsUpdated }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="sm:col-span-2">
-                <label className="block text-slate-600 font-bold mb-1">العنوان بالتفصيل</label>
+            <div>
+              <label className="block text-slate-600 font-bold mb-1">العنوان بالتفصيل</label>
+              <input
+                type="text"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                placeholder="شارع الأزهر - القاهرة"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1 flex items-center justify-between">
+                  <span>رقم السجل التجاري (س.ت)</span>
+                  <span className="text-[10px] text-slate-400 font-normal">يظهر في ترويسة الفواتير والتقارير</span>
+                </label>
                 <input
                   type="text"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                  placeholder="مثال: 198425"
+                  value={formData.commercial_reg}
+                  onChange={(e) => setFormData({ ...formData, commercial_reg: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-blue-900"
+                  dir="ltr"
                 />
               </div>
               <div>
-                <label className="block text-slate-600 font-bold mb-1">السجل التجاري والبطاقة الضريبية</label>
+                <label className="block text-slate-700 font-bold mb-1 flex items-center justify-between">
+                  <span>رقم البطاقة الضريبية (ب.ض)</span>
+                  <span className="text-[10px] text-slate-400 font-normal">يظهر في ترويسة الفواتير والتقارير</span>
+                </label>
                 <input
                   type="text"
-                  placeholder="س.ت: 123 | ب.ض: 456"
+                  placeholder="مثال: 654-321-987"
                   value={formData.tax_number}
                   onChange={(e) => setFormData({ ...formData, tax_number: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-blue-900"
+                  dir="ltr"
                 />
               </div>
             </div>

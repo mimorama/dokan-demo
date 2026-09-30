@@ -39,7 +39,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
   const currency = settings?.currency || 'ج.م';
   const storeName = settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية';
   const commercialReg = settings?.commercial_reg || '198425';
-  const taxId = settings?.tax_id || '654-321-987';
+  const taxId = settings?.tax_number || settings?.tax_id || '654-321-987';
 
   useEffect(() => {
     loadBranches();
@@ -561,7 +561,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
                     <div>
                       <p className="text-[10px] text-slate-500 font-bold">جمهورية مصر العربية</p>
                       <h1 className="text-base font-black text-slate-900">{storeName}</h1>
-                      <p className="text-[10px] text-slate-600">س.ت: {commercialReg} | ب.ض: {taxId}</p>
+                      <p className="text-[10px] text-slate-600">السجل التجاري (س.ت): <span className="font-mono font-bold">{commercialReg}</span> | البطاقة الضريبية (ب.ض): <span className="font-mono font-bold">{taxId}</span></p>
                     </div>
 
                     <div className="text-center">

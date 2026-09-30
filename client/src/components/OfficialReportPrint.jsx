@@ -7,7 +7,7 @@ export default function OfficialReportPrint({ reportType, reportData, startDate,
   const phone = settings?.phone || '01012345678 - 01187654321';
   const address = settings?.address || 'شارع الملك فيصل الرئيسي - الجيزة - جمهورية مصر العربية';
   const commercialReg = settings?.commercial_reg || '198425';
-  const taxId = settings?.tax_id || '654-321-987';
+  const taxId = settings?.tax_number || settings?.tax_id || '654-321-987';
 
   const todayStr = React.useMemo(() => {
     return new Intl.DateTimeFormat('ar-EG', {
@@ -191,7 +191,8 @@ export default function OfficialReportPrint({ reportType, reportData, startDate,
                     <h1 className="text-base sm:text-lg font-black text-slate-900 leading-tight">{storeName}</h1>
                     <p className="text-[10px] font-bold text-amber-700">لتجارة وتوزيع الأجهزة الكهربائية والمنزلية</p>
                     <div className="text-[9.5px] text-slate-600 space-y-0.5 pt-0.5">
-                      <p>س.ت: <span className="font-mono font-bold text-slate-800">{commercialReg}</span> | ب.ض: <span className="font-mono font-bold text-slate-800">{taxId}</span></p>
+                      <p>السجل التجاري (س.ت): <span className="font-mono font-bold text-slate-900">{commercialReg}</span></p>
+                      <p>البطاقة الضريبية (ب.ض): <span className="font-mono font-bold text-slate-900">{taxId}</span></p>
                       <p>هاتف الإدارة: <span className="font-mono font-bold" dir="ltr">{phone}</span></p>
                     </div>
                   </div>
