@@ -56,7 +56,7 @@ function runBackfill() {
 
   // Purchases
   for (const p of purchases) {
-    const total = Number(p.total) || 0;
+    const total = Number(p.total_amount || p.total || p.paid_amount) || 0;
     if (total <= 0) continue;
     const sName = p.supplier_id ? (db.prepare('SELECT name FROM suppliers WHERE id = ?').get(p.supplier_id)?.name || 'مورد') : 'مورد';
     createJournalEntry({

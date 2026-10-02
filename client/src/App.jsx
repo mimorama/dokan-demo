@@ -12,6 +12,7 @@ import ShiftModal from './components/ShiftModal';
 import ZReportPrint from './components/ZReportPrint';
 import ReturnModal from './components/ReturnModal';
 import TransferPrint from './components/TransferPrint';
+import CycleCountModal from './components/CycleCountModal';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -66,6 +67,12 @@ export default function App() {
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isUsersModalOpen, setIsUsersModalOpen] = useState(false);
+  const [isDirectCycleCountOpen, setIsDirectCycleCountOpen] = useState(false);
+
+  // Deep Navigation & SubTabs State (Requirement 3 & 13)
+  const [branchesSubTab, setBranchesSubTab] = useState('branches');
+  const [salesSubTab, setSalesSubTab] = useState('invoices');
+  const [targetPurchaseId, setTargetPurchaseId] = useState(null);
 
   // Load store settings always (for branding on login screen as well)
   useEffect(() => {
@@ -84,11 +91,11 @@ export default function App() {
     if (!currentUser) return;
 
     const rolePermissions = {
-      admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
-      manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
+      admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'inventory-audit', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
+      manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'inventory-audit', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
       cashier: ['pos', 'sales', 'reconciliation', 'customers', 'serials', 'installments'],
-      storekeeper: ['products', 'branches', 'purchases', 'serials', 'suppliers'],
-      accountant: ['dashboard', 'sales', 'reconciliation', 'accounting', 'purchases', 'cashbox', 'customers', 'suppliers', 'reports']
+      storekeeper: ['products', 'inventory-audit', 'branches', 'purchases', 'serials', 'suppliers'],
+      accountant: ['dashboard', 'sales', 'reconciliation', 'accounting', 'purchases', 'inventory-audit', 'cashbox', 'customers', 'suppliers', 'reports']
     };
     const allowed = rolePermissions[currentUser.role] || rolePermissions.admin;
     if (!allowed.includes(activeTab)) {
@@ -155,6 +162,19 @@ export default function App() {
     setIsReturnModalOpen(true);
   };
 
+  const handleNavigateTab = (tab, subTab, entityId) => {
+    setActiveTab(tab);
+    if (tab === 'branches' && subTab) {
+      setBranchesSubTab(subTab);
+    }
+    if (tab === 'sales' && subTab) {
+      setSalesSubTab(subTab);
+    }
+    if (tab === 'purchases' && entityId) {
+      setTargetPurchaseId(entityId);
+    }
+  };
+
   // If NOT logged in: strictly block access and display full-page LoginScreen
   if (!currentUser) {
     return (
@@ -173,6 +193,7 @@ export default function App() {
     pos: 'نقطة البيع - إصدار فاتورة جديدة',
     purchases: 'المشتريات والتوريدات ومراجعة الفواتير',
     products: 'الأجهزة والمخزون',
+    'inventory-audit': 'الجرد المخزني الفعلي وتدقيق العهدة بالباركود',
     branches: 'الفروع والمستودعات والمخازن التابعة',
     serials: 'تتبع السيريال والضمان وخدمة ما بعد البيع',
     installments: 'إدارة عقود البيع بالتقسيط والأقساط الشهرية',
@@ -218,7 +239,7 @@ export default function App() {
           onSwitchUser={() => setIsLoginModalOpen(true)}
           onLogout={handleLogout}
           onOpenUsersManagement={() => setActiveTab('users')}
-          onNavigateTab={(tab) => setActiveTab(tab)}
+          onNavigateTab={handleNavigateTab}
           onViewTransfer={handleViewTransferById}
         />
 
@@ -250,6 +271,7 @@ export default function App() {
                 setSelectedSaleForReturn(sale);
                 setIsReturnModalOpen(true);
               }}
+              initialTab={salesSubTab}
             />
           )}
 
@@ -264,12 +286,24 @@ export default function App() {
             <Purchases
               settings={settings}
               currentUser={currentUser}
+              initialPurchaseId={targetPurchaseId}
             />
           )}
 
           {activeTab === 'products' && (
             <Products
               settings={settings}
+              onOpenCycleCount={() => setIsDirectCycleCountOpen(true)}
+            />
+          )}
+
+          {activeTab === 'inventory-audit' && (
+            <Branches
+              settings={settings}
+              currentUser={currentUser}
+              onPrintTransfer={(transfer) => setPrintableTransfer(transfer)}
+              initialTab="warehouses"
+              autoOpenCycleCount={true}
             />
           )}
 
@@ -278,6 +312,7 @@ export default function App() {
               settings={settings}
               currentUser={currentUser}
               onPrintTransfer={(transfer) => setPrintableTransfer(transfer)}
+              initialTab={branchesSubTab}
             />
           )}
 
@@ -385,6 +420,15 @@ export default function App() {
         isOpen={isCalculatorOpen}
         onClose={() => setIsCalculatorOpen(false)}
         settings={settings}
+      />
+
+      {/* Direct Inventory Cycle Count & Audit Modal */}
+      <CycleCountModal
+        isOpen={isDirectCycleCountOpen}
+        onClose={() => setIsDirectCycleCountOpen(false)}
+        currentUser={currentUser}
+        settings={settings}
+        onAuditSaved={() => loadGlobalData()}
       />
 
       {/* Switch User Modal (when already logged in) */}

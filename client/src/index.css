@@ -70,18 +70,29 @@
     print-color-adjust: exact !important;
   }
 
-  /* 1. Hide non-printable app UI cleanly */
+  /* 1. Hide non-printable app UI cleanly (NEVER hide main as it hosts modal printable content) */
   .no-print,
   .print\:hidden,
   aside,
   header,
   nav,
-  main,
   #sidebar,
   .sidebar,
-  #root > div > aside,
-  #root > div > .min-w-0 {
+  #root > div > aside {
     display: none !important;
+  }
+
+  /* Unclip main and app wrappers for clean printing */
+  main,
+  #root,
+  #root > div,
+  #root > div > .min-w-0 {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow: visible !important;
+    display: block !important;
   }
 
   /* 2. Flatten and unclip modal dialog overlays */

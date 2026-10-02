@@ -24,13 +24,14 @@ import {
   Upload,
   Info,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Scan
 } from 'lucide-react';
 import { api } from '../api';
 import BarcodeLabelModal from '../components/BarcodeLabelModal';
 import { exportToExcel, readExcelFile, downloadProductsTemplate } from '../utils/excel';
 
-export default function Products({ settings }) {
+export default function Products({ settings, onOpenCycleCount }) {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -440,6 +441,16 @@ export default function Products({ settings }) {
           >
             <Building2 className="w-4 h-4 text-amber-400" />
             <span>إضافة ماركة</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenCycleCount}
+            className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-black text-xs px-3.5 py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-98"
+            title="بدء عملية الجرد المخزني الفعلي ومطابقة السيريال والباركود وحصر العجز والزيادة"
+          >
+            <Scan className="w-4 h-4 text-amber-200" />
+            <span>الجرد المخزني الفعلي (تدقيق العهدة)</span>
           </button>
 
           <button

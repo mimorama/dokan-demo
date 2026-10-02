@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 
-export default function Purchases({ settings, currentUser }) {
+export default function Purchases({ settings, currentUser, initialPurchaseId }) {
   const [activeTab, setActiveTab] = useState('purchases'); // 'purchases', 'sales_audit'
   const [purchases, setPurchases] = useState([]);
   const [sales, setSales] = useState([]);
@@ -75,6 +75,12 @@ export default function Purchases({ settings, currentUser }) {
   useEffect(() => {
     loadData();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (initialPurchaseId) {
+      handleViewPurchaseDetails(initialPurchaseId);
+    }
+  }, [initialPurchaseId]);
 
   const loadData = async () => {
     setLoading(true);
@@ -968,8 +974,46 @@ export default function Purchases({ settings, currentUser }) {
 
       {/* MODAL: VIEW PURCHASE DETAILS & OFFICIAL PRINT */}
       {selectedPurchase && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div id="printable-area" className="printable-area bg-white rounded-3xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] flex flex-col print:max-h-none print:shadow-none print:border-none print:p-0">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          {/* Isolated Print Styles for Purchase Supply Note */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 8mm 10mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #purchase-receipt-printable-area,
+              #purchase-receipt-printable-area * {
+                visibility: visible !important;
+              }
+              #purchase-receipt-printable-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+                display: block !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+
+          <div id="purchase-receipt-printable-area" className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] flex flex-col print:max-h-none print:shadow-none print:border-none print:p-0">
             {/* Formal Document Header for Print */}
             <div className="hidden print:block border-b-2 border-slate-900 pb-3 mb-4 text-right">
               <div className="flex items-center justify-between mb-2">
@@ -999,10 +1043,10 @@ export default function Purchases({ settings, currentUser }) {
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 cursor-pointer transition"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm cursor-pointer transition"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>طباعة إذن التوريد</span>
+                  <span>طباعة إذن التوريد (A4)</span>
                 </button>
                 <button onClick={() => setSelectedPurchase(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
                   <X className="w-5 h-5" />

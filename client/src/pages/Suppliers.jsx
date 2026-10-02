@@ -25,7 +25,8 @@ import {
   Calendar,
   Building,
   Clock,
-  RefreshCw
+  RefreshCw,
+  Receipt
 } from 'lucide-react';
 import { api } from '../api';
 import { exportToExcel, readExcelFile, downloadSuppliersTemplate } from '../utils/excel';

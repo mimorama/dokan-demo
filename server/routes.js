@@ -2145,7 +2145,7 @@ router.get('/suppliers/:id/statement', (req, res) => {
 
     // 1. Get all purchases for this supplier
     let purchaseSql = `
-      SELECT p.id, p.invoice_no, p.total, p.paid_amount, p.created_at as tx_date,
+      SELECT p.id, p.invoice_no, p.total_amount as total, p.paid_amount, p.created_at as tx_date,
              w.name as warehouse_name
       FROM purchases p
       LEFT JOIN warehouses w ON p.warehouse_id = w.id
@@ -3692,17 +3692,50 @@ router.get('/invoices/public/:invoiceNo', (req, res) => {
           .btn-print { background: #2563eb; color: #ffffff; }
           .btn-whatsapp { background: #16a34a; color: #ffffff; }
           @media print {
-            @page { size: A4 portrait; margin: 8mm 10mm; }
-            html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; color: #000000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .container { box-shadow: none !important; border: 1px solid #cbd5e1 !important; max-width: 100% !important; border-radius: 0 !important; }
+            @page { size: A4 portrait; margin: 6mm 8mm; }
+            html, body { 
+              background: #ffffff !important; 
+              padding: 0 !important; 
+              margin: 0 !important; 
+              color: #000000 !important; 
+              font-size: 11px !important;
+              -webkit-print-color-adjust: exact !important; 
+              print-color-adjust: exact !important; 
+            }
+            .container { 
+              box-shadow: none !important; 
+              border: 1.5px solid #0f172a !important; 
+              max-width: 100% !important; 
+              border-radius: 0 !important; 
+              margin: 0 !important;
+            }
             .actions-bar, .no-print, .web-only { display: none !important; }
             .print-only { display: block !important; }
             .top-bar { display: none !important; }
-            .print-header { display: flex !important; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
-            .section { padding: 12px 16px !important; }
-            table { font-size: 11px !important; }
-            th { background: #f1f5f9 !important; color: #0f172a !important; }
-            .totals-box { border: 1px solid #94a3b8 !important; }
+            .print-header { 
+              display: flex !important; 
+              justify-content: space-between; 
+              align-items: center; 
+              border-bottom: 2px solid #0f172a; 
+              padding: 8px 14px !important; 
+              margin-bottom: 8px !important; 
+            }
+            .section { padding: 6px 14px !important; border-bottom: 1px solid #cbd5e1 !important; page-break-inside: avoid; }
+            .grid { gap: 6px !important; }
+            table { font-size: 10.5px !important; margin-top: 4px !important; }
+            th { background: #f1f5f9 !important; color: #0f172a !important; padding: 5px 8px !important; font-size: 11px !important; }
+            td { padding: 5px 8px !important; }
+            .totals-box { 
+              border: 1.5px solid #0f172a !important; 
+              padding: 8px 12px !important; 
+              margin-top: 8px !important; 
+              max-width: 280px !important;
+              font-size: 11px !important;
+              page-break-inside: avoid;
+            }
+            .totals-row { margin-bottom: 3px !important; }
+            .totals-final { font-size: 13px !important; padding-top: 4px !important; }
+            tr { page-break-inside: avoid; }
           }
           .print-only { display: none; }
         </style>
@@ -3710,18 +3743,18 @@ router.get('/invoices/public/:invoiceNo', (req, res) => {
       <body>
         <div class="container">
           <!-- Official Print Header (Only visible on print/PDF) -->
-          <div class="print-only print-header" style="padding: 16px 20px 0 20px;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <img src="/logo.svg" alt="شعار" style="max-height: 55px; max-width: 180px; object-contain;" />
+          <div class="print-only print-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <img src="/logo.svg" alt="شعار" style="max-height: 48px; max-width: 160px; object-fit: contain;" onerror="this.style.display='none'" />
               <div>
-                <h2 style="font-size: 16px; font-weight: 900; color: #0f172a;">${storeName}</h2>
-                <p style="font-size: 10px; color: #475569;">س.ت: <strong>${settings.commercial_reg || '198425'}</strong> | ب.ض: <strong>${settings.tax_number || '654-321-987'}</strong></p>
-                <p style="font-size: 10px; color: #64748b;">📍 ${sale.branch_address || settings.address || 'القاهرة - مصر'} | 📞 ${sale.branch_phone || storePhone}</p>
+                <h2 style="font-size: 15px; font-weight: 900; color: #0f172a; line-height: 1.2;">${storeName}</h2>
+                <p style="font-size: 9.5px; color: #475569; margin-top: 2px;">س.ت: <strong>${settings.commercial_reg || '198425'}</strong> | ب.ض: <strong>${settings.tax_number || '654-321-987'}</strong></p>
+                <p style="font-size: 9.5px; color: #64748b;">📍 ${sale.branch_address || settings.address || 'القاهرة - مصر'} | 📞 ${sale.branch_phone || storePhone}</p>
               </div>
             </div>
-            <div style="text-align: left; font-size: 11px; line-height: 1.5;" dir="ltr">
-              <div style="font-weight: 900; font-size: 14px; color: #1e3a8a;">TAX INVOICE / فاتورة بيع</div>
-              <div>No: <strong style="font-family: monospace;">${sale.invoice_no}</strong></div>
+            <div style="text-align: left; font-size: 10px; line-height: 1.4;" dir="ltr">
+              <div style="font-weight: 900; font-size: 13px; color: #1e3a8a;">TAX INVOICE / فاتورة مبيعات معتمدة</div>
+              <div>No: <strong style="font-family: monospace; font-size: 12px; color: #0f172a;">${sale.invoice_no}</strong></div>
               <div>Date: <strong>${new Date(sale.created_at).toLocaleDateString('ar-EG')}</strong></div>
               <div>Branch: <strong>${sale.branch_name || 'المركز الرئيسي'}</strong></div>
             </div>
@@ -4764,7 +4797,8 @@ router.post('/inventory/audit', (req, res) => {
 
     // Get expected in_stock serials in this warehouse with product costs
     const dbSerials = db.prepare(`
-      SELECT ps.id, ps.serial_number, ps.product_id, ps.status, p.name as product_name, p.model_number, p.buy_price, p.sell_price
+      SELECT ps.id, ps.serial_number, ps.product_id, ps.status, p.name as product_name, p.model_number, 
+             COALESCE(p.cost_price, 0) as buy_price, COALESCE(p.cash_price, 0) as sell_price
       FROM product_serials ps
       JOIN products p ON ps.product_id = p.id
       WHERE ps.warehouse_id = ? AND ps.status = 'in_stock'
@@ -4784,7 +4818,8 @@ router.post('/inventory/audit', (req, res) => {
       } else {
         // Look up if serial exists elsewhere or not in DB
         const anywhere = db.prepare(`
-          SELECT ps.id, ps.serial_number, ps.product_id, ps.status, ps.warehouse_id, p.name as product_name, p.model_number, p.buy_price, w.name as warehouse_name
+          SELECT ps.id, ps.serial_number, ps.product_id, ps.status, ps.warehouse_id, p.name as product_name, p.model_number, 
+                 COALESCE(p.cost_price, 0) as buy_price, w.name as warehouse_name
           FROM product_serials ps
           JOIN products p ON ps.product_id = p.id
           LEFT JOIN warehouses w ON ps.warehouse_id = w.id
@@ -4868,7 +4903,8 @@ router.post('/inventory/audit', (req, res) => {
 router.get('/inventory/warehouses/:id/expected', (req, res) => {
   try {
     const list = db.prepare(`
-      SELECT ps.id, ps.serial_number, ps.product_id, p.name as product_name, p.model_number, p.buy_price, p.sell_price
+      SELECT ps.id, ps.serial_number, ps.product_id, p.name as product_name, p.model_number, 
+             COALESCE(p.cost_price, 0) as buy_price, COALESCE(p.cash_price, 0) as sell_price
       FROM product_serials ps
       JOIN products p ON ps.product_id = p.id
       WHERE ps.warehouse_id = ? AND ps.status = 'in_stock'
@@ -5418,8 +5454,21 @@ router.get('/reconciliation/daily', (req, res) => {
       net_cash_drawer_flow: Math.round(netCashDrawerFlow * 100) / 100
     };
 
+    const activeDates = db.prepare(`
+      SELECT DISTINCT DATE(created_at) as d FROM sales WHERE created_at IS NOT NULL
+      UNION
+      SELECT DISTINCT DATE(paid_date) as d FROM installment_payments WHERE paid_date IS NOT NULL
+      UNION
+      SELECT DISTINCT DATE(created_at) as d FROM cash_box WHERE created_at IS NOT NULL
+      UNION
+      SELECT DISTINCT DATE(payment_date) as d FROM supplier_payments WHERE payment_date IS NOT NULL
+      ORDER BY d DESC
+      LIMIT 15
+    `).all().map(r => r.d).filter(Boolean);
+
     res.json({
       targetDate,
+      active_dates: activeDates,
       summary: {
         total_invoices_count: sales.length,
         total_gross_revenue: Math.round(totalGrossRevenue * 100) / 100,

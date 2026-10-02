@@ -26,12 +26,13 @@ export default function ReceiptPrint({ receiptData, settings, onClose }) {
         @media print {
           @page {
             size: ${printFormat === 'a5' ? 'A5 landscape' : '100mm 150mm'};
-            margin: ${printFormat === 'a5' ? '6mm 8mm' : '4mm'};
+            margin: ${printFormat === 'a5' ? '4mm 6mm' : '3mm'};
           }
           html, body {
             background: #ffffff !important;
             margin: 0 !important;
             padding: 0 !important;
+            height: auto !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
@@ -48,10 +49,14 @@ export default function ReceiptPrint({ receiptData, settings, onClose }) {
             top: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
+            max-height: 138mm !important;
+            overflow: hidden !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 10px 16px !important;
             box-shadow: none !important;
-            border: none !important;
+            border: 1.5px solid #0f172a !important;
           }
           .no-print {
             display: none !important;
@@ -120,82 +125,82 @@ export default function ReceiptPrint({ receiptData, settings, onClose }) {
             /* OFFICIAL A5 VOUCHER (Requirement 13) */
             <div 
               id="receipt-printable-area"
-              className="w-[210mm] max-w-full bg-white p-6 rounded-xl border border-slate-300 shadow-md text-slate-900 font-['Cairo',sans-serif] text-xs leading-normal"
+              className="w-[200mm] max-w-full bg-white p-4 rounded-xl border border-slate-300 shadow-md text-slate-900 font-['Cairo',sans-serif] text-xs leading-normal"
               dir="rtl"
             >
               {/* Official Store Header */}
-              <div className="border-b-2 border-slate-900 pb-3 mb-3">
+              <div className="border-b-2 border-slate-900 pb-2 mb-2">
                 <div className="flex items-center justify-between">
-                  <div className="w-20">
+                  <div className="w-16">
                     <img
                       src={settings?.logo_url || '/logo.svg'}
                       alt={storeName}
-                      className="max-h-12 w-auto object-contain"
+                      className="max-h-10 w-auto object-contain"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
                   <div className="flex-1 text-center">
-                    <h2 className="text-base font-black text-slate-900">{storeName}</h2>
-                    <p className="text-[11px] font-bold text-slate-700">لتجارة وتوزيع الأجهزة الكهربائية والمنزلية بالتقسيط المباشر</p>
-                    <p className="text-[9.5px] text-slate-500 font-medium mt-0.5">
+                    <h2 className="text-sm font-black text-slate-900">{storeName}</h2>
+                    <p className="text-[10px] font-bold text-slate-700">لتجارة وتوزيع الأجهزة الكهربائية والمنزلية بالتقسيط المباشر</p>
+                    <p className="text-[9px] text-slate-500 font-medium">
                       {settings?.address || 'الفرع الرئيسي'} | هاتف: {settings?.phone || '---'}
                     </p>
                   </div>
-                  <div className="text-left w-32 font-mono text-[10px] space-y-0.5" dir="rtl">
+                  <div className="text-left w-32 font-mono text-[9.5px] space-y-0.5" dir="rtl">
                     <div className="font-bold text-slate-900">سند قبض رقم:</div>
                     <div className="text-emerald-700 font-black text-xs">{receiptData.receiptNo}</div>
-                    <div className="text-slate-500 text-[9px]">{todayFormatted}</div>
+                    <div className="text-slate-500 text-[8.5px]">{todayFormatted}</div>
                   </div>
                 </div>
               </div>
 
               {/* Title Strip */}
-              <div className="flex items-center justify-between bg-emerald-50/80 border border-emerald-300 rounded-lg px-3 py-1.5 mb-3 text-xs">
-                <span className="font-black text-emerald-950 flex items-center gap-1.5">
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+              <div className="flex items-center justify-between bg-emerald-50/80 border border-emerald-300 rounded-lg px-2.5 py-1 mb-2 text-xs">
+                <span className="font-black text-emerald-950 flex items-center gap-1.5 text-[11px]">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
                   <span>سند قبض واستلام نقدية - تحصيل قسط شهري</span>
                 </span>
-                <span className="font-mono font-bold text-emerald-800 text-[11px]">
+                <span className="font-mono font-bold text-emerald-800 text-[10px]">
                   التاريخ: {new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}
                 </span>
               </div>
 
               {/* Customer and Installment Grid */}
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-1.5">
-                  <div className="flex justify-between border-b border-slate-200 pb-1">
-                    <span className="text-slate-500 font-semibold">استلمنا من السيد/ة:</span>
+              <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-1">
+                  <div className="flex justify-between border-b border-slate-200 pb-0.5">
+                    <span className="text-slate-500 font-semibold text-[11px]">استلمنا من السيد/ة:</span>
                     <strong className="text-slate-900 font-black text-xs">{receiptData.customerName}</strong>
                   </div>
                   {receiptData.customerPhone && (
-                    <div className="flex justify-between">
+                    <div className="flex justify-between text-[11px]">
                       <span className="text-slate-500">رقم الهاتف:</span>
                       <span className="font-mono font-bold" dir="ltr">{receiptData.customerPhone}</span>
                     </div>
                   )}
                   {receiptData.contractNo && (
-                    <div className="flex justify-between">
+                    <div className="flex justify-between text-[11px]">
                       <span className="text-slate-500">رقم العقد / الفاتورة:</span>
                       <span className="font-mono font-bold text-blue-700">{receiptData.contractNo}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-1.5">
-                  <div className="flex justify-between border-b border-slate-200 pb-1">
-                    <span className="text-slate-500 font-semibold">بيان القسط المسدد:</span>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-1">
+                  <div className="flex justify-between border-b border-slate-200 pb-0.5">
+                    <span className="text-slate-500 font-semibold text-[11px]">بيان القسط المسدد:</span>
                     <strong className="text-indigo-950 font-black text-xs">
                       قسط شهر {receiptData.dueDate || 'الحالي'} (قسط #{receiptData.installmentNo || '1'})
                     </strong>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-[11px]">
                     <span className="text-slate-500">قناة وسيلة السداد:</span>
                     <span className="font-bold text-slate-800">
                       {receiptData.paymentMethod === 'bank' ? 'تحويل بنكي / إنستاباي' : 'نقداً بخزينة المعرض'}
                     </span>
                   </div>
                   {receiptData.remainingBalance !== undefined && (
-                    <div className="flex justify-between text-rose-800 font-bold">
+                    <div className="flex justify-between text-rose-800 font-bold text-[11px]">
                       <span>الرصيد المتبقي على العقد:</span>
                       <span className="font-mono" dir="ltr">{Number(receiptData.remainingBalance).toLocaleString()} {currency}</span>
                     </div>
@@ -204,34 +209,34 @@ export default function ReceiptPrint({ receiptData, settings, onClose }) {
               </div>
 
               {/* Amount Highlight Box */}
-              <div className="bg-emerald-100/70 border-2 border-emerald-400 rounded-xl p-3 mb-4 flex items-center justify-between">
+              <div className="bg-emerald-100/70 border border-emerald-400 rounded-lg p-2 mb-2 flex items-center justify-between">
                 <div>
-                  <span className="block text-[11px] text-emerald-950 font-bold">المبلغ المستلم والمقيد بحساب العقد:</span>
-                  <span className="text-xs font-semibold text-emerald-900 mt-0.5 block">
+                  <span className="block text-[10.5px] text-emerald-950 font-bold">المبلغ المستلم والمقيد بحساب العقد:</span>
+                  <span className="text-[11px] font-semibold text-emerald-900 block">
                     (فقط وقدره {Number(receiptData.amountPaid).toLocaleString()} جنيه مصري لا غير)
                   </span>
                 </div>
-                <div className="text-left font-mono font-black text-lg text-emerald-900" dir="ltr">
+                <div className="text-left font-mono font-black text-base text-emerald-900" dir="ltr">
                   {Number(receiptData.amountPaid).toLocaleString()} {currency}
                 </div>
               </div>
 
               {/* Signatures */}
-              <div className="grid grid-cols-3 gap-6 pt-2 border-t border-slate-200 text-center text-[10px]">
+              <div className="grid grid-cols-3 gap-4 pt-1.5 border-t border-slate-200 text-center text-[9.5px]">
                 <div>
                   <p className="font-bold text-slate-700">المحصل / أمين الخزينة</p>
-                  <div className="h-10 border-b border-dashed border-slate-400 mt-1"></div>
-                  <p className="text-[9px] text-slate-500 mt-1">خزينة المعرض</p>
+                  <div className="h-6 border-b border-dashed border-slate-400 mt-0.5"></div>
+                  <p className="text-[8.5px] text-slate-500 mt-0.5">خزينة المعرض</p>
                 </div>
                 <div>
                   <p className="font-bold text-slate-700">توقيع المودع (العميل)</p>
-                  <div className="h-10 border-b border-dashed border-slate-400 mt-1"></div>
-                  <p className="text-[9px] text-slate-500 mt-1">{receiptData.customerName}</p>
+                  <div className="h-6 border-b border-dashed border-slate-400 mt-0.5"></div>
+                  <p className="text-[8.5px] text-slate-500 mt-0.5">{receiptData.customerName}</p>
                 </div>
                 <div>
                   <p className="font-bold text-slate-700">اعتماد الإدارة وختم المعرض</p>
-                  <div className="h-10 border-b border-dashed border-slate-400 mt-1 flex items-center justify-center">
-                    <span className="border border-slate-400 px-2 py-0.5 text-[9.5px] font-bold text-slate-800 rounded">
+                  <div className="h-6 border-b border-dashed border-slate-400 mt-0.5 flex items-center justify-center">
+                    <span className="border border-slate-400 px-1.5 py-0.2 text-[8.5px] font-bold text-slate-800 rounded">
                       {storeName}
                     </span>
                   </div>

@@ -18,6 +18,7 @@ import {
   Percent,
   Smartphone,
   Send,
+  Clock,
   X
 } from 'lucide-react';
 import { api } from '../api';
@@ -163,6 +164,36 @@ export default function DailyReconciliation({ settings, currentUser }) {
           </button>
         </div>
       </div>
+
+      {/* Quick Dates Selector for Active Financial Days */}
+      {reconciliationData?.active_dates?.length > 0 && (
+        <div className="bg-slate-100/90 border border-slate-200/80 px-4 py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-slate-700 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-blue-600" />
+              <span>أيام العمل المسجل بها حركات مالية مؤخراً:</span>
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {reconciliationData.active_dates.map(date => (
+                <button
+                  key={date}
+                  type="button"
+                  onClick={() => setSelectedDate(date)}
+                  className={`px-2.5 py-1 rounded-lg font-mono font-bold text-xs transition cursor-pointer ${
+                    selectedDate === date
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-blue-50 hover:text-blue-700 border border-slate-200/80'
+                  }`}
+                  title={`عرض تقفيل ومراجعة يوم ${date}`}
+                >
+                  {date}
+                </button>
+              ))}
+            </div>
+          </div>
+          <span className="text-[11px] text-slate-500 font-medium">اضغط على أي تاريخ لمراجعة حركات الخزينة وتقفيل المبيعات لذلك اليوم فوراً</span>
+        </div>
+      )}
 
       {/* Main KPI Summary Channels Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">

@@ -26,8 +26,10 @@ import { api } from '../api';
 
 export default function Sales({ 
   settings, 
+  currentUser,
   onViewInvoice, 
-  onInitiateReturn 
+  onInitiateReturn,
+  initialTab
 }) {
   const [sales, setSales] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -49,13 +51,19 @@ export default function Sales({
   const [copiedInvoiceNo, setCopiedInvoiceNo] = useState(null);
 
   // Tabs & Returns State (Requirement 6)
-  const [activeTab, setActiveTab] = useState('invoices'); // 'invoices' or 'returns'
+  const [activeTab, setActiveTab] = useState(initialTab || 'invoices'); // 'invoices' or 'returns'
   const [returnsList, setReturnsList] = useState([]);
   const [returnsLoading, setReturnsLoading] = useState(false);
   const [printableCreditNote, setPrintableCreditNote] = useState(null);
 
   const currency = settings?.currency || 'ج.م';
   const storeName = settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية';
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   useEffect(() => {
     loadBranches();

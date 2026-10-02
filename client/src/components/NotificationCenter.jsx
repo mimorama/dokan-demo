@@ -166,15 +166,34 @@ export default function NotificationCenter({
       if (onViewTransfer && notif.entity_id) {
         onViewTransfer(notif.entity_id);
       } else if (onNavigateTab) {
-        onNavigateTab('branches', 'transfers');
+        onNavigateTab('branches', 'transfers', notif.entity_id);
       }
-      setIsOpen(false);
     } else if (notif.type === 'stock_request') {
       if (onNavigateTab) {
-        onNavigateTab('branches', 'requests');
+        onNavigateTab('branches', 'requests', notif.entity_id);
       }
-      setIsOpen(false);
+    } else if (notif.type === 'purchase' || notif.type === 'purchase_invoice') {
+      if (onNavigateTab) {
+        onNavigateTab('purchases', null, notif.entity_id);
+      }
+    } else if (notif.type === 'installment' || notif.type === 'overdue_installment') {
+      if (onNavigateTab) {
+        onNavigateTab('installments', null, notif.entity_id);
+      }
+    } else if (notif.type === 'return' || notif.type === 'sale_return') {
+      if (onNavigateTab) {
+        onNavigateTab('sales', 'returns', notif.entity_id);
+      }
+    } else if (notif.type === 'low_stock' || notif.type === 'inventory') {
+      if (onNavigateTab) {
+        onNavigateTab('products', null, notif.entity_id);
+      }
+    } else {
+      if (onNavigateTab) {
+        onNavigateTab('branches', 'transfers', notif.entity_id);
+      }
     }
+    setIsOpen(false);
   };
 
   // Filtered notifications

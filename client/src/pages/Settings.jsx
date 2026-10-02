@@ -37,7 +37,6 @@ export default function Settings({ onSettingsUpdated }) {
     installment_terms: '',
     max_cashier_discount_percent: 10,
     max_cashier_discount_amount: 500,
-    manager_override_pin: '1234',
     logo_url: '/logo.png'
   });
 
@@ -74,8 +73,7 @@ export default function Settings({ onSettingsUpdated }) {
           ...prev,
           ...data,
           max_cashier_discount_percent: data.max_cashier_discount_percent ?? 10,
-          max_cashier_discount_amount: data.max_cashier_discount_amount ?? 500,
-          manager_override_pin: data.manager_override_pin || '1234'
+          max_cashier_discount_amount: data.max_cashier_discount_amount ?? 500
         }));
       }
     } catch (err) {
@@ -401,10 +399,10 @@ export default function Settings({ onSettingsUpdated }) {
           <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-4">
             <h3 className="font-extrabold text-sm text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3">
               <Lock className="w-4 h-4 text-rose-600" />
-              سقوف خصومات الكاشير ورمز تفويض الإدارة (Manager Override)
+              سقوف خصومات الكاشير (حدود الخصم المسموح به)
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-slate-600 font-bold mb-1">أقصى خصم مسموح به للكاشير ({formData.currency})</label>
                 <input
@@ -413,7 +411,7 @@ export default function Settings({ onSettingsUpdated }) {
                   onChange={(e) => setFormData({ ...formData, max_cashier_discount_amount: Number(e.target.value) })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold"
                 />
-                <span className="text-[10px] text-slate-400 block mt-1">أي خصم يتجاوز هذا المبلغ يتطلب موافقة المدير</span>
+                <span className="text-[10px] text-slate-400 block mt-1">أي خصم يتجاوز هذا المبلغ يتطلب تفويض المدير برمز الـ PIN الخاص به</span>
               </div>
 
               <div>
@@ -424,20 +422,12 @@ export default function Settings({ onSettingsUpdated }) {
                   onChange={(e) => setFormData({ ...formData, max_cashier_discount_percent: Number(e.target.value) })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold"
                 />
-                <span className="text-[10px] text-slate-400 block mt-1">النسبة المئوية القصوى المسموح بها للكاشير</span>
+                <span className="text-[10px] text-slate-400 block mt-1">النسبة المئوية القصوى المسموح بها للكاشير قبل طلب إذن الإدارة</span>
               </div>
-
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">الرمز السري لتفويض المدير (PIN) *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.manager_override_pin}
-                  onChange={(e) => setFormData({ ...formData, manager_override_pin: e.target.value })}
-                  className="w-full bg-slate-50 border border-rose-200 rounded-xl px-3 py-2 font-mono font-bold text-center tracking-widest text-sm text-rose-700"
-                />
-                <span className="text-[10px] text-slate-400 block mt-1">يُدخل هذا الرمز لتمرير الخصومات واستثناءات القائمة السوداء</span>
-              </div>
+            </div>
+            <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200/70 p-3 rounded-xl flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <span>ملاحظة: رموز التفويض السرية (PIN) يتم تعيينها وتخصيصها بشكل فردي ومستقل لكل مدير عام أو مدير فرع من شاشة إدارة المستخدمين.</span>
             </div>
           </div>
 

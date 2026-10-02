@@ -19,7 +19,8 @@ import {
   User,
   Receipt,
   Coins,
-  BookOpen
+  BookOpen,
+  Scan
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -43,6 +44,7 @@ export default function Sidebar({
     { id: 'accounting', label: 'النظام المحاسبي العام', icon: BookOpen },
     { id: 'purchases', label: 'المشتريات وتدقيق الفواتير', icon: ShoppingBag, purchasesHighlight: true },
     { id: 'products', label: 'الأجهزة والمخزون', icon: Package },
+    { id: 'inventory-audit', label: 'الجرد المخزني والتدقيق', icon: Scan, auditHighlight: true },
     { id: 'branches', label: 'الفروع والمخازن', icon: Building2 },
     { id: 'serials', label: 'السيريال والضمان', icon: Barcode },
     { 
@@ -61,11 +63,11 @@ export default function Sidebar({
 
   // Role permissions
   const rolePermissions = {
-    admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
-    manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
+    admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'inventory-audit', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
+    manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'inventory-audit', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
     cashier: ['pos', 'sales', 'reconciliation', 'customers', 'serials', 'installments'],
-    storekeeper: ['products', 'branches', 'purchases', 'serials', 'suppliers'],
-    accountant: ['dashboard', 'sales', 'reconciliation', 'accounting', 'purchases', 'cashbox', 'customers', 'suppliers', 'reports']
+    storekeeper: ['products', 'inventory-audit', 'branches', 'purchases', 'serials', 'suppliers'],
+    accountant: ['dashboard', 'sales', 'reconciliation', 'accounting', 'purchases', 'inventory-audit', 'cashbox', 'customers', 'suppliers', 'reports']
   };
 
   const allowedTabs = rolePermissions[currentUser?.role || 'admin'] || rolePermissions.admin;
@@ -173,13 +175,15 @@ export default function Sidebar({
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-black'
                   : item.highlight
                   ? 'bg-blue-950/40 text-blue-300 hover:bg-blue-900/60 border border-blue-800/40'
+                  : item.auditHighlight
+                  ? 'text-amber-300 hover:bg-amber-950/40'
                   : item.reportHighlight
                   ? 'text-indigo-300 hover:bg-indigo-950/50'
                   : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : item.highlight ? 'text-blue-400' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : item.highlight ? 'text-blue-400' : item.auditHighlight ? 'text-amber-400' : 'text-slate-400'}`} />
                 <span>{item.label}</span>
               </div>
               {item.badge && (

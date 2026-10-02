@@ -32,14 +32,14 @@ import { api } from '../api';
 import CycleCountModal from '../components/CycleCountModal';
 import TransferPrint from '../components/TransferPrint';
 
-export default function Branches({ settings, currentUser, onPrintTransfer, initialTab }) {
-  const [activeTab, setActiveTab] = useState(initialTab || 'branches'); // 'branches', 'warehouses', 'transfers', 'requests', 'matrix'
+export default function Branches({ settings, currentUser, onPrintTransfer, initialTab, autoOpenCycleCount }) {
+  const [activeTab, setActiveTab] = useState(initialTab || (autoOpenCycleCount ? 'warehouses' : 'branches')); // 'branches', 'warehouses', 'transfers', 'requests', 'matrix'
   const [localPrintTransfer, setLocalPrintTransfer] = useState(null);
   const [branches, setBranches] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [stockRequests, setStockRequests] = useState([]);
-  const [showCycleCountModal, setShowCycleCountModal] = useState(false);
+  const [showCycleCountModal, setShowCycleCountModal] = useState(Boolean(autoOpenCycleCount));
   const [inventoryMatrix, setInventoryMatrix] = useState({ products: [], warehouses: [] });
   const [allProductsList, setAllProductsList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +57,13 @@ export default function Branches({ settings, currentUser, onPrintTransfer, initi
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    if (autoOpenCycleCount) {
+      setActiveTab('warehouses');
+      setShowCycleCountModal(true);
+    }
+  }, [autoOpenCycleCount]);
 
   // Modals
   const [showAddBranchModal, setShowAddBranchModal] = useState(false);
