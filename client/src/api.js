@@ -176,10 +176,12 @@ export const api = {
   returnSale: (id, data) => fetchApi(`/sales/${id}/return`, { method: 'POST', body: JSON.stringify(data) }),
   getReturns: () => fetchApi('/returns'),
 
-  // Physical Inventory Cycle Counting
+  // Physical Inventory Cycle Counting (Requirement 8)
   createInventoryAudit: (data) => fetchApi('/inventory/audit', { method: 'POST', body: JSON.stringify(data) }),
   getInventoryAudits: () => fetchApi('/inventory/audits'),
   getInventoryAudit: (id) => fetchApi(`/inventory/audits/${id}`),
+  getExpectedWarehouseStock: (whId) => fetchApi(`/inventory/warehouses/${whId}/expected`),
+  reconcileInventoryAudit: (auditId) => fetchApi(`/inventory/audits/${auditId}/reconcile`, { method: 'POST' }),
 
   // Customer Credit Score & Blacklist
   updateCustomerCredit: (id, data) => fetchApi(`/customers/${id}/credit-status`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -202,13 +204,17 @@ export const api = {
   deleteNotification: (id) => fetchApi(`/notifications/${id}`, { method: 'DELETE' }),
   clearReadNotifications: () => fetchApi('/notifications/clear-read', { method: 'DELETE' }),
 
-  // Supplier Payments
+  // Supplier Payments & Statement
   paySupplier: (supplierId, data) => fetchApi(`/suppliers/${supplierId}/pay`, { method: 'POST', body: JSON.stringify(data) }),
   getSupplierPayments: (supplierId) => fetchApi(`/suppliers/${supplierId}/payments`),
+  getSupplierStatement: (supplierId, query = '') => fetchApi(`/suppliers/${supplierId}/statement${query ? '?' + query : ''}`),
 
   // Customer Sales & Credit Transactions
   getCustomerSales: (customerId) => fetchApi(`/customers/${customerId}/sales`),
   getCustomerTransactions: (customerId) => fetchApi(`/customers/${customerId}/transactions`),
+
+  // Manager Override PIN Verification (Requirement 17)
+  verifyPin: (pin) => fetchApi('/auth/verify-pin', { method: 'POST', body: JSON.stringify({ pin }) }),
 
   // Accounting System
   getAccountingAccounts: () => fetchApi('/accounting/accounts'),
@@ -219,7 +225,8 @@ export const api = {
   getTrialBalance: (params = '') => fetchApi(`/accounting/trial-balance${params ? '?' + params : ''}`),
   getIncomeStatement: (params = '') => fetchApi(`/accounting/income-statement${params ? '?' + params : ''}`),
   getBalanceSheet: (params = '') => fetchApi(`/accounting/balance-sheet${params ? '?' + params : ''}`),
-  getAccountingDashboard: () => fetchApi('/accounting/dashboard')
+  getAccountingDashboard: () => fetchApi('/accounting/dashboard'),
+  backfillAccounting: () => fetchApi('/accounting/backfill', { method: 'POST' })
 };
 
 

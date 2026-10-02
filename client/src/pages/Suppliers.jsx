@@ -19,7 +19,13 @@ import {
   Info,
   CheckCircle,
   DollarSign,
-  Wallet
+  Wallet,
+  Printer,
+  FileText,
+  Calendar,
+  Building,
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../api';
 import { exportToExcel, readExcelFile, downloadSuppliersTemplate } from '../utils/excel';
@@ -31,13 +37,32 @@ export default function Suppliers({ settings }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
 
-  // Supplier Payment Modal (Requirement 6)
+  // Supplier Payment Modal (Requirements 6 & 14)
   const [paySupplierModal, setPaySupplierModal] = useState(null);
   const [payAmount, setPayAmount] = useState('');
   const [payType, setPayType] = useState('partial'); // 'partial' or 'full'
   const [payMethod, setPayMethod] = useState('cash'); // 'cash' or 'bank'
   const [payNotes, setPayNotes] = useState('');
   const [isSubmittingPay, setIsSubmittingPay] = useState(false);
+
+  // Bank & Check Payment States (Requirement 14)
+  const [bankChannel, setBankChannel] = useState('check'); // 'check' or 'transfer'
+  const [selectedBankName, setSelectedBankName] = useState('البنك الأهلي المصري');
+  const [checkNumber, setCheckNumber] = useState('');
+  const [checkDueDate, setCheckDueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientNationalId, setRecipientNationalId] = useState('');
+
+  // Check Handover Receipt Modal State (Requirement 14)
+  const [showCheckReceiptModal, setShowCheckReceiptModal] = useState(false);
+  const [checkReceiptData, setCheckReceiptData] = useState(null);
+
+  // Supplier Statement of Account State (Requirement 7)
+  const [statementSupplier, setStatementSupplier] = useState(null);
+  const [statementData, setStatementData] = useState(null);
+  const [statementLoading, setStatementLoading] = useState(false);
+  const [statementFromDate, setStatementFromDate] = useState('');
+  const [statementToDate, setStatementToDate] = useState('');
 
   // Excel Import/Export State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -46,6 +71,10 @@ export default function Suppliers({ settings }) {
   const [importError, setImportError] = useState('');
   const [importFileName, setImportFileName] = useState('');
   const [importSuccessMsg, setImportSuccessMsg] = useState('');
+
+  // Bank Accounts for payment (Requirement 14)
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -58,9 +87,11 @@ export default function Suppliers({ settings }) {
   });
 
   const currency = settings?.currency || 'ج.م';
+  const storeName = settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية';
 
   useEffect(() => {
     loadSuppliers();
+    loadBankAccounts();
   }, []);
 
   const loadSuppliers = async () => {
@@ -74,12 +105,38 @@ export default function Suppliers({ settings }) {
     }
   };
 
+  const loadBankAccounts = async () => {
+    try {
+      const data = await api.getAccounts();
+      const list = data?.accounts || (Array.isArray(data) ? data : []);
+      // Filter out merchants like valu/contact if we want, or keep all active
+      setBankAccounts(list);
+      if (list.length > 0) {
+        setSelectedBankAccountId(list[0].id);
+        setSelectedBankName(list[0].bank_name || list[0].name);
+      }
+    } catch (err) {
+      console.error('Failed to load bank accounts', err);
+    }
+  };
+
   const handleOpenPayModal = (s) => {
     setPaySupplierModal(s);
     setPayType('partial');
     setPayAmount('');
     setPayMethod('cash');
     setPayNotes('');
+    setBankChannel('check');
+    if (bankAccounts.length > 0) {
+      setSelectedBankAccountId(bankAccounts[0].id);
+      setSelectedBankName(bankAccounts[0].bank_name || bankAccounts[0].name);
+    } else {
+      setSelectedBankName('البنك الأهلي المصري');
+    }
+    setCheckNumber('');
+    setCheckDueDate(new Date().toISOString().slice(0, 10));
+    setRecipientName(s.name || '');
+    setRecipientNationalId('');
   };
 
   const handlePayTypeChange = (type) => {
@@ -100,15 +157,48 @@ export default function Suppliers({ settings }) {
       return;
     }
 
+    if (payMethod === 'bank' && bankChannel === 'check' && !checkNumber.trim()) {
+      alert('يرجى إدخال رقم الشيك البنكي');
+      return;
+    }
+
     setIsSubmittingPay(true);
     try {
-      await api.paySupplier(paySupplierModal.id, {
+      const payload = {
         amount: amountVal,
         payment_type: payType,
         payment_method: payMethod,
-        notes: payNotes || (payType === 'full' ? 'سداد كامل المديونية' : 'دفعة من تحت الحساب')
-      });
-      alert('تم تسجيل سداد المورد بنجاح وتحديث الرصيد والخزينة!');
+        bank_account_id: payMethod === 'bank' && selectedBankAccountId ? Number(selectedBankAccountId) : null,
+        notes: payNotes || (payType === 'full' ? 'سداد كامل المديونية' : 'دفعة من تحت الحساب'),
+        check_number: (payMethod === 'bank' && bankChannel === 'check') ? checkNumber.trim() : null,
+        check_due_date: (payMethod === 'bank' && bankChannel === 'check') ? checkDueDate : null,
+        bank_name: payMethod === 'bank' ? selectedBankName : null,
+        recipient_name: (payMethod === 'bank' && bankChannel === 'check') ? recipientName.trim() : null,
+        recipient_national_id: (payMethod === 'bank' && bankChannel === 'check') ? recipientNationalId.trim() : null
+      };
+
+      const res = await api.paySupplier(paySupplierModal.id, payload);
+
+      // If paid via bank check, open printable handover receipt
+      if (payMethod === 'bank' && bankChannel === 'check') {
+        setCheckReceiptData({
+          receiptNo: res.payment?.receipt_no || `CHK-REC-${Date.now().toString().slice(-6)}`,
+          supplierName: paySupplierModal.name,
+          supplierCompany: paySupplierModal.company || '',
+          amount: amountVal,
+          bankName: selectedBankName,
+          checkNumber: checkNumber.trim(),
+          checkDueDate: checkDueDate,
+          recipientName: recipientName.trim() || paySupplierModal.name,
+          recipientNationalId: recipientNationalId.trim() || '---',
+          paymentDate: new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' }),
+          notes: payNotes
+        });
+        setShowCheckReceiptModal(true);
+      } else {
+        alert(res.message || 'تم تسجيل سداد المورد بنجاح وتحديث الرصيد والخزينة!');
+      }
+
       setPaySupplierModal(null);
       loadSuppliers();
     } catch (err) {
@@ -116,6 +206,35 @@ export default function Suppliers({ settings }) {
     } finally {
       setIsSubmittingPay(false);
     }
+  };
+
+  // Supplier Statement Handler (Requirement 7)
+  const handleOpenStatementModal = async (s) => {
+    setStatementSupplier(s);
+    setStatementFromDate('');
+    setStatementToDate('');
+    await fetchSupplierStatement(s.id, '', '');
+  };
+
+  const fetchSupplierStatement = async (supplierId, from, to) => {
+    setStatementLoading(true);
+    try {
+      const q = new URLSearchParams();
+      if (from) q.append('from_date', from);
+      if (to) q.append('to_date', to);
+      const data = await api.getSupplierStatement(supplierId, q.toString());
+      setStatementData(data);
+    } catch (err) {
+      alert('خطأ أثناء تحميل كشف حساب المورد');
+    } finally {
+      setStatementLoading(false);
+    }
+  };
+
+  const handleApplyStatementFilter = (e) => {
+    e.preventDefault();
+    if (!statementSupplier) return;
+    fetchSupplierStatement(statementSupplier.id, statementFromDate, statementToDate);
   };
 
   // Export current suppliers to Excel
@@ -344,6 +463,15 @@ export default function Suppliers({ settings }) {
               </div>
 
               <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleOpenStatementModal(s)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold transition cursor-pointer"
+                  title="عرض كشف حساب تفصيلي بجميع المشتريات والتوريدات والمدفوعات"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>كشف حساب</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleOpenPayModal(s)}
@@ -872,12 +1000,112 @@ export default function Suppliers({ settings }) {
                 </select>
               </div>
 
+              {/* Bank & Check Fields (Requirement 14) */}
+              {payMethod === 'bank' && (
+                <div className="space-y-3 bg-blue-50/50 p-3.5 rounded-2xl border border-blue-100">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1 text-[11px]">نوع المعاملة البنكية:</label>
+                      <select
+                        value={bankChannel}
+                        onChange={(e) => setBankChannel(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-xs"
+                      >
+                        <option value="check">شيك بنكي مسحوب على المعرض</option>
+                        <option value="transfer">تحويل بنكي مباشر (حساب لحساب)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1 text-[11px]">الحساب البنكي للمعرض:</label>
+                      <select
+                        value={selectedBankAccountId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setSelectedBankAccountId(id);
+                          const acc = bankAccounts.find(a => String(a.id) === String(id));
+                          if (acc) setSelectedBankName(acc.bank_name || acc.name);
+                        }}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-xs"
+                      >
+                        {bankAccounts.map(b => (
+                          <option key={b.id} value={b.id}>
+                            {b.bank_name ? `${b.bank_name} - ${b.name}` : b.name}
+                          </option>
+                        ))}
+                        {bankAccounts.length === 0 && (
+                          <option value="">البنك الأهلي المصري (الرئيسي)</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  {bankChannel === 'check' && (
+                    <div className="space-y-2 pt-2 border-t border-blue-200/60">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 text-[11px]">رقم الشيك البنكي *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثال: 0049281"
+                            value={checkNumber}
+                            onChange={(e) => setCheckNumber(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 font-mono font-bold text-xs"
+                            dir="ltr"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 text-[11px]">تاريخ استحقاق وصرف الشيك *</label>
+                          <input
+                            type="date"
+                            required
+                            value={checkDueDate}
+                            onChange={(e) => setCheckDueDate(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 text-[11px]">اسم مستلم أصل الشيك:</label>
+                          <input
+                            type="text"
+                            placeholder={paySupplierModal.name}
+                            value={recipientName}
+                            onChange={(e) => setRecipientName(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 text-[11px]">الرقم القومي للمستلم:</label>
+                          <input
+                            type="text"
+                            maxLength={14}
+                            placeholder="14 رقم"
+                            value={recipientNationalId}
+                            onChange={(e) => setRecipientNationalId(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50 p-2 rounded-lg text-[11px] text-amber-800 font-semibold flex items-center gap-1.5">
+                        <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                        <span>سيتم توليد إيصال رسمي لتسليم أصل الشيك مع بيانات المستلم وتوقيعه فور التأكيد.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Notes */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1">البيان / رقم الإيصال / ملاحظات:</label>
                 <input
                   type="text"
-                  placeholder="مثال: دفعة شيك رقم 4589 أو إيصال استلام نقدية"
+                  placeholder="مثال: سداد دفعة شيك أو إيصال استلام نقدية"
                   value={payNotes}
                   onChange={(e) => setPayNotes(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
@@ -901,6 +1129,440 @@ export default function Suppliers({ settings }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Check Handover Receipt Modal (Requirement 14) */}
+      {showCheckReceiptModal && checkReceiptData && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          {/* Isolated Print Styles for Check Receipt */}
+          <style>{`
+            @media print {
+              @page {
+                size: A5 landscape;
+                margin: 8mm 10mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #check-receipt-printable-area,
+              #check-receipt-printable-area * {
+                visibility: visible !important;
+              }
+              #check-receipt-printable-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Controls Bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3 no-print">
+              <div className="flex items-center gap-2.5">
+                <Receipt className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-sm">إيصال استلام أصل شيك بنكي معتمد</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">رقم السند: {checkReceiptData.receiptNo}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-98"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة الإيصال (A5)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCheckReceiptModal(false)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Receipt Content */}
+            <div className="p-6 overflow-y-auto" dir="rtl">
+              <div id="check-receipt-printable-area" className="border-2 border-slate-900 rounded-2xl p-6 bg-white space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3">
+                  <div className="flex items-center gap-3">
+                    {settings?.logo_url && (
+                      <img src={settings.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+                    )}
+                    <div>
+                      <h2 className="text-base font-black text-slate-900">{storeName}</h2>
+                      <p className="text-[11px] text-slate-600">لتجارة وتوزيع الأجهزة الكهربائية والأدوات المنزلية</p>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono text-xs space-y-1" dir="ltr">
+                    <div className="font-black text-slate-900">سند استلام أصل شيك</div>
+                    <div className="text-slate-600">No: {checkReceiptData.receiptNo}</div>
+                    <div className="text-slate-600">Date: {checkReceiptData.paymentDate}</div>
+                  </div>
+                </div>
+
+                {/* Voucher Title */}
+                <div className="text-center py-1 bg-slate-100 rounded-lg border border-slate-300">
+                  <span className="font-black text-sm text-slate-900 tracking-wide">
+                    سند تسليم واستلام أصل شيك بنكي مسحوب على حساب المعرض
+                  </span>
+                </div>
+
+                {/* Grid Info */}
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-slate-500 font-bold block text-[11px]">اسم المورد / الجهة المستفيدة:</span>
+                    <span className="font-extrabold text-slate-900 text-sm">{checkReceiptData.supplierName}</span>
+                    {checkReceiptData.supplierCompany && (
+                      <span className="block text-[11px] text-blue-700 font-semibold">{checkReceiptData.supplierCompany}</span>
+                    )}
+                  </div>
+                  <div className="bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-200 space-y-1">
+                    <span className="text-emerald-800 font-bold block text-[11px]">المبلغ المسدد بالشيك:</span>
+                    <span className="font-black text-emerald-900 text-base" dir="ltr">
+                      {Number(checkReceiptData.amount).toLocaleString()} {currency}
+                    </span>
+                    <span className="block text-[11px] text-emerald-800 font-bold">
+                      (فقط وقدره {Number(checkReceiptData.amount).toLocaleString()} جنيهاً مصرياً لا غير)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Check & Bank Details */}
+                <div className="grid grid-cols-3 gap-2.5 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div>
+                    <span className="text-slate-500 font-bold block text-[11px]">البنك المسحوب عليه:</span>
+                    <span className="font-bold text-slate-900">{checkReceiptData.bankName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block text-[11px]">رقم الشيك البنكي:</span>
+                    <span className="font-mono font-black text-slate-900 text-sm" dir="ltr">
+                      {checkReceiptData.checkNumber}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block text-[11px]">تاريخ استحقاق وصرف الشيك:</span>
+                    <span className="font-mono font-bold text-slate-900" dir="ltr">
+                      {checkReceiptData.checkDueDate}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Recipient Details & Legal Acknowledgment */}
+                <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 text-xs space-y-1.5">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-slate-600 font-bold">اسم المستلم لأصل الشيك: </span>
+                      <span className="font-black text-slate-900">{checkReceiptData.recipientName}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 font-bold">الرقم القومي: </span>
+                      <span className="font-mono font-bold text-slate-900" dir="ltr">{checkReceiptData.recipientNationalId}</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-700 leading-relaxed font-semibold pt-1 border-t border-amber-200/50">
+                    أقر أنا الموقع أدناه ومندوب الجهة الموضحة أعلاه، بأني قد استلمت من إدارة المعرض أصل الشيك البنكي الموضح بياناته وأرقامه بعاليه بكامل الصحة والصلاحية، وأتعهد بتسليمه للشركة الموردة دون أدنى مسؤولية مالية أو قانونية على المعرض بعد التوقيع والاستلام.
+                  </p>
+                </div>
+
+                {/* Signatures */}
+                <div className="grid grid-cols-3 gap-4 pt-3 border-t-2 border-slate-900 text-center text-xs">
+                  <div className="space-y-6">
+                    <span className="font-bold text-slate-700 block">توقيع المستلم لأصل الشيك</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-6">
+                    <span className="font-bold text-slate-700 block">توقيع أمين الخزينة / المحاسب</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-6">
+                    <span className="font-bold text-slate-700 block">اعتماد الإدارة العامة والختم</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Supplier Statement of Account Modal (Requirement 7) */}
+      {statementSupplier && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          {/* Isolated Print Styles for Statement */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 8mm 10mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #supplier-statement-printable-area,
+              #supplier-statement-printable-area * {
+                visibility: visible !important;
+              }
+              #supplier-statement-printable-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Controls Bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 no-print">
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-sm">
+                    كشف حساب المورد: {statementSupplier.name}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {statementSupplier.company ? `شركة ${statementSupplier.company} | ` : ''}سجل المشتريات والتوريدات وسداد الدفعات
+                  </p>
+                </div>
+              </div>
+
+              {/* Filter Form */}
+              <form onSubmit={handleApplyStatementFilter} className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5">
+                  <span className="text-slate-500 font-bold text-[11px]">من:</span>
+                  <input
+                    type="date"
+                    value={statementFromDate}
+                    onChange={(e) => setStatementFromDate(e.target.value)}
+                    className="font-mono text-xs focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5">
+                  <span className="text-slate-500 font-bold text-[11px]">إلى:</span>
+                  <input
+                    type="date"
+                    value={statementToDate}
+                    onChange={(e) => setStatementToDate(e.target.value)}
+                    className="font-mono text-xs focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={statementLoading}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${statementLoading ? 'animate-spin' : ''}`} />
+                  <span>تحديث</span>
+                </button>
+              </form>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-98"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة كشف الحساب (A4)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatementSupplier(null)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Statement Document */}
+            <div className="p-6 overflow-y-auto" dir="rtl">
+              <div id="supplier-statement-printable-area" className="space-y-4 bg-white text-slate-900 text-xs">
+                {/* Formal Header */}
+                <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3">
+                  <div className="flex items-center gap-3">
+                    {settings?.logo_url && (
+                      <img src={settings.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+                    )}
+                    <div>
+                      <h2 className="text-base font-black text-slate-900">{storeName}</h2>
+                      <p className="text-[11px] text-slate-600">قسم الحسابات والمشتريات العامة ومتابعة الموردين</p>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono text-xs space-y-0.5" dir="ltr">
+                    <div className="font-black text-slate-900">STATEMENT OF ACCOUNT</div>
+                    <div className="text-slate-600">Date: {new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {statementData?.period?.from_date ? `From: ${statementData.period.from_date}` : 'All History'}
+                      {statementData?.period?.to_date ? ` To: ${statementData.period.to_date}` : ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="text-center py-1.5 bg-slate-100 rounded-xl border border-slate-300">
+                  <span className="font-black text-sm text-slate-900 tracking-wide">
+                    كشف حساب مورد معتمد وحركة التوريدات والمدفوعات
+                  </span>
+                </div>
+
+                {/* Supplier Card Info */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px]">
+                  <div>
+                    <span className="text-slate-500 font-bold block">اسم المورد:</span>
+                    <span className="font-extrabold text-slate-900 text-xs">{statementSupplier.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block">الشركة / التوكيل:</span>
+                    <span className="font-bold text-blue-700 text-xs">{statementSupplier.company || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block">رقم الهاتف:</span>
+                    <span className="font-mono font-bold text-slate-900" dir="ltr">{statementSupplier.phone}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block">العنوان:</span>
+                    <span className="font-bold text-slate-700">{statementSupplier.address || '—'}</span>
+                  </div>
+                </div>
+
+                {/* Summary KPIs */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-blue-50/80 p-3 rounded-xl border border-blue-200">
+                    <span className="text-blue-700 font-bold block text-[11px]">إجمالي التوريدات والمشتريات (دائن)</span>
+                    <span className="font-black text-blue-950 text-base" dir="ltr">
+                      {Number(statementData?.summary?.total_purchases || 0).toLocaleString()} {currency}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50/80 p-3 rounded-xl border border-emerald-200">
+                    <span className="text-emerald-700 font-bold block text-[11px]">إجمالي المسدد والمدفوعات (مدين)</span>
+                    <span className="font-black text-emerald-950 text-base" dir="ltr">
+                      {Number(statementData?.summary?.total_payments || 0).toLocaleString()} {currency}
+                    </span>
+                  </div>
+                  <div className="bg-rose-50/80 p-3 rounded-xl border border-rose-200">
+                    <span className="text-rose-700 font-bold block text-[11px]">الرصيد المتبقي المستحق للمورد</span>
+                    <span className="font-black text-rose-950 text-base" dir="ltr">
+                      {Number(statementData?.summary?.closing_balance || statementSupplier.balance || 0).toLocaleString()} {currency}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Transactions Table */}
+                <div className="border border-slate-300 rounded-xl overflow-hidden">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-800 text-white font-bold">
+                      <tr>
+                        <th className="p-2 text-center w-8">#</th>
+                        <th className="p-2 w-24">التاريخ</th>
+                        <th className="p-2 w-28">رقم المرجع</th>
+                        <th className="p-2">البيان والحركة</th>
+                        <th className="p-2 w-24 text-left">مدين (سداد)</th>
+                        <th className="p-2 w-24 text-left">دائن (توريد)</th>
+                        <th className="p-2 w-28 text-left">الرصيد بعد الحركة</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {statementData?.transactions?.length > 0 ? (
+                        statementData.transactions.map((tx, idx) => (
+                          <tr key={tx.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                            <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                            <td className="p-2 font-mono text-[11px] text-slate-700" dir="ltr">{tx.date}</td>
+                            <td className="p-2 font-mono font-bold text-slate-800 text-[11px]" dir="ltr">{tx.ref_no}</td>
+                            <td className="p-2 text-slate-700">
+                              <span className="font-bold">{tx.description}</span>
+                            </td>
+                            <td className="p-2 font-mono font-bold text-emerald-700 text-left" dir="ltr">
+                              {tx.debit > 0 ? Number(tx.debit).toLocaleString() : '—'}
+                            </td>
+                            <td className="p-2 font-mono font-bold text-blue-700 text-left" dir="ltr">
+                              {tx.credit > 0 ? Number(tx.credit).toLocaleString() : '—'}
+                            </td>
+                            <td className="p-2 font-mono font-black text-slate-900 text-left" dir="ltr">
+                              {Number(tx.balance || 0).toLocaleString()} {currency}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="7" className="p-8 text-center text-slate-400 font-bold">
+                            {statementLoading ? 'جاري استخراج كشف الحساب...' : 'لا توجد حركات مسجلة لهذا المورد في الفترة المحددة'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-black text-xs">
+                      <tr>
+                        <td colSpan="4" className="p-2.5 text-slate-900 font-bold text-center">الإجمالي العام للحركات</td>
+                        <td className="p-2.5 text-left font-mono text-emerald-800" dir="ltr">
+                          {Number(statementData?.summary?.total_payments || 0).toLocaleString()} {currency}
+                        </td>
+                        <td className="p-2.5 text-left font-mono text-blue-800" dir="ltr">
+                          {Number(statementData?.summary?.total_purchases || 0).toLocaleString()} {currency}
+                        </td>
+                        <td className="p-2.5 text-left font-mono text-slate-900" dir="ltr">
+                          {Number(statementData?.summary?.closing_balance || 0).toLocaleString()} {currency}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Signatures */}
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t-2 border-slate-900 text-center text-xs">
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">مندوب / مسؤول المورد</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">المحاسب المالي المختص</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">اعتماد المدير العام والختم</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

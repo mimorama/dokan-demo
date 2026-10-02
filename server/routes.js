@@ -1316,7 +1316,7 @@ router.post('/sales', (req, res) => {
       if (physicalCashAmount > 0) {
         db.prepare(`
           INSERT INTO cash_box (type, category, amount, description, ref_type, ref_id)
-          VALUES ('in', ?, ?, 'sale', ?)
+          VALUES ('in', ?, ?, ?, 'sale', ?)
         `).run(
           sale_type === 'installment' ? 'مقدم قسط' : 'مبيعات كاش',
           physicalCashAmount,
@@ -2022,7 +2022,20 @@ router.delete('/suppliers/:id', (req, res) => {
 router.post('/suppliers/:id/pay', (req, res) => {
   try {
     const supplierId = req.params.id;
-    const { amount, payment_type, payment_method, bank_account_id, receipt_no, notes, payment_date } = req.body;
+    const { 
+      amount, 
+      payment_type, 
+      payment_method, 
+      bank_account_id, 
+      receipt_no, 
+      notes, 
+      payment_date,
+      check_number,
+      check_due_date,
+      bank_name,
+      recipient_name,
+      recipient_national_id
+    } = req.body;
 
     const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplierId);
     if (!supplier) return res.status(404).json({ error: 'المورد غير موجود' });
@@ -2041,9 +2054,28 @@ router.post('/suppliers/:id/pay', (req, res) => {
 
       // 2. Record in supplier_payments
       const insertPay = db.prepare(`
-        INSERT INTO supplier_payments (supplier_id, amount, payment_type, payment_method, bank_account_id, receipt_no, notes, payment_date, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(supplierId, payAmount, payment_type || 'partial', method, bank_account_id || null, receipt_no || '', notes || '', payDate, req.body.created_by || 'الكاشير');
+        INSERT INTO supplier_payments (
+          supplier_id, amount, payment_type, payment_method, bank_account_id, 
+          receipt_no, notes, payment_date, created_by,
+          check_number, check_due_date, bank_name, recipient_name, recipient_national_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        supplierId, 
+        payAmount, 
+        payment_type || 'partial', 
+        method, 
+        bank_account_id || null, 
+        receipt_no || '', 
+        notes || '', 
+        payDate, 
+        req.body.created_by || 'الكاشير',
+        check_number || null,
+        check_due_date || null,
+        bank_name || null,
+        recipient_name || null,
+        recipient_national_id || null
+      );
 
       const paymentId = insertPay.lastInsertRowid;
 
@@ -2062,20 +2094,21 @@ router.post('/suppliers/:id/pay', (req, res) => {
         ref_type: 'supplier_payment',
         ref_id: paymentId,
         entry_date: payDate,
-        description: `سداد مستحقات للمورد ${supplier.name} (${method === 'cash' ? 'خزينة نقدية' : 'حساب بنكي'})`,
+        description: `سداد مستحقات للمورد ${supplier.name} (${method === 'cash' ? 'خزينة نقدية' : check_number ? `شيك رقم ${check_number}` : 'حساب بنكي'})`,
         lines: [
           { account_code: '2101', debit: payAmount, credit: 0, description: `تخفيض مديونية المورد ${supplier.name}` },
-          { account_code: method === 'cash' ? '1101' : '1102', debit: 0, credit: payAmount, description: `صرف ${method === 'cash' ? 'نقدية من الخزينة' : 'من الحساب البنكي'}` }
+          { account_code: method === 'cash' ? '1101' : '1102', debit: 0, credit: payAmount, description: `صرف ${method === 'cash' ? 'نقدية من الخزينة' : check_number ? `بشيك مسحوب على ${bank_name || 'البنك'}` : 'من الحساب البنكي'}` }
         ],
         created_by: req.body.created_by || 'الكاشير'
       });
 
       const updatedSupplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplierId);
-      return { paymentId, newBalance: updatedSupplier.balance };
+      const insertedPayment = db.prepare('SELECT * FROM supplier_payments WHERE id = ?').get(paymentId);
+      return { paymentId, newBalance: updatedSupplier.balance, payment: insertedPayment };
     });
 
     const result = payTx();
-    logActivity(req, 'SUPPLIER_PAYMENT', 'supplier', supplierId, `سداد دفعة للمورد ${supplier.name} بقيمة ${payAmount} ج.م`, req.body);
+    logActivity(req, 'SUPPLIER_PAYMENT', 'supplier', supplierId, `سداد دفعة للمورد ${supplier.name} بقيمة ${payAmount} ج.م (${method})`, req.body);
     res.json({ 
       success: true, 
       ...result, 
@@ -2096,6 +2129,122 @@ router.get('/suppliers/:id/payments', (req, res) => {
       ORDER BY sp.id DESC
     `).all(req.params.id);
     res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. Complete Supplier Statement of Account (كشف حساب الموردين الشامل)
+router.get('/suppliers/:id/statement', (req, res) => {
+  try {
+    const supplierId = req.params.id;
+    const { from_date, to_date } = req.query;
+
+    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplierId);
+    if (!supplier) return res.status(404).json({ error: 'المورد غير موجود' });
+
+    // 1. Get all purchases for this supplier
+    let purchaseSql = `
+      SELECT p.id, p.invoice_no, p.total, p.paid_amount, p.created_at as tx_date,
+             w.name as warehouse_name
+      FROM purchases p
+      LEFT JOIN warehouses w ON p.warehouse_id = w.id
+      WHERE p.supplier_id = ?
+    `;
+    const purchaseParams = [supplierId];
+    if (from_date) {
+      purchaseSql += ' AND DATE(p.created_at) >= DATE(?)';
+      purchaseParams.push(from_date);
+    }
+    if (to_date) {
+      purchaseSql += ' AND DATE(p.created_at) <= DATE(?)';
+      purchaseParams.push(to_date);
+    }
+    const purchases = db.prepare(purchaseSql).all(...purchaseParams);
+
+    // 2. Get all payments to this supplier
+    let paySql = `
+      SELECT sp.*, ba.name as bank_account_name, sp.payment_date as tx_date
+      FROM supplier_payments sp
+      LEFT JOIN bank_accounts ba ON sp.bank_account_id = ba.id
+      WHERE sp.supplier_id = ?
+    `;
+    const payParams = [supplierId];
+    if (from_date) {
+      paySql += ' AND DATE(sp.payment_date) >= DATE(?)';
+      payParams.push(from_date);
+    }
+    if (to_date) {
+      paySql += ' AND DATE(sp.payment_date) <= DATE(?)';
+      payParams.push(to_date);
+    }
+    const payments = db.prepare(paySql).all(...payParams);
+
+    // 3. Build unified transaction ledger
+    const transactions = [];
+
+    for (const p of purchases) {
+      // In supplier ledger: Purchase increases what we owe (Credit / دائن للمورد)
+      transactions.push({
+        id: `pur-${p.id}`,
+        type: 'purchase',
+        date: p.tx_date ? p.tx_date.slice(0, 10) : '',
+        ref_no: p.invoice_no,
+        description: `فاتورة توريد وشراء أجهزة (${p.warehouse_name || 'المستودع الرئيسي'})`,
+        debit: 0,
+        credit: Number(p.total) || 0,
+        raw_date: p.tx_date
+      });
+    }
+
+    for (const py of payments) {
+      // Payment reduces what we owe (Debit / مدين للمورد / سداد)
+      const methodLabel = py.payment_method === 'cash' ? 'نقدي من الخزينة' : 
+        py.check_number ? `شيك رقم ${py.check_number} (${py.bank_name || 'البنك'})` : 'تحويل بنكي';
+      transactions.push({
+        id: `pay-${py.id}`,
+        type: 'payment',
+        date: py.tx_date ? String(py.tx_date).slice(0, 10) : '',
+        ref_no: py.receipt_no || (py.check_number ? `CHK-${py.check_number}` : `PAY-${py.id}`),
+        description: `سداد دفعة للمورد - ${methodLabel} ${py.notes ? `(${py.notes})` : ''}`,
+        debit: Number(py.amount) || 0,
+        credit: 0,
+        raw_date: py.tx_date || py.created_at,
+        check_number: py.check_number,
+        check_due_date: py.check_due_date,
+        bank_name: py.bank_name,
+        recipient_name: py.recipient_name,
+        recipient_national_id: py.recipient_national_id
+      });
+    }
+
+    // Sort chronologically
+    transactions.sort((a, b) => new Date(a.raw_date || 0) - new Date(b.raw_date || 0));
+
+    // Calculate running balance: credit increases balance (we owe), debit decreases balance
+    let runningBalance = 0;
+    let totalPurchases = 0;
+    let totalPayments = 0;
+
+    for (const tx of transactions) {
+      totalPurchases += tx.credit;
+      totalPayments += tx.debit;
+      runningBalance = runningBalance + tx.credit - tx.debit;
+      tx.balance = runningBalance;
+    }
+
+    res.json({
+      supplier,
+      period: { from_date: from_date || null, to_date: to_date || null },
+      summary: {
+        total_purchases: totalPurchases,
+        total_payments: totalPayments,
+        closing_balance: Number(supplier.balance) !== undefined ? Number(supplier.balance) : runningBalance,
+        computed_balance: runningBalance,
+        transactions_count: transactions.length
+      },
+      transactions
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3219,9 +3368,12 @@ router.put('/transfers/stock/:id', (req, res) => {
 
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get() || {};
     const validPin = settings.manager_override_pin || '1234';
+    const cleanPin = manager_pin ? String(manager_pin).trim() : '';
+    const userPinCheck = cleanPin ? db.prepare("SELECT id FROM users WHERE pin = ? AND role IN ('admin', 'manager') AND status = 'active'").get(cleanPin) : null;
+    const isPinValid = userPinCheck || (cleanPin && cleanPin === validPin);
 
-    if (manager_pin && manager_pin !== validPin) {
-      return res.status(403).json({ error: 'رمز مرور المدير غير صحيح' });
+    if (manager_pin && !isPinValid) {
+      return res.status(403).json({ error: 'الرمز السري لتفويض المدير غير صحيح' });
     }
 
     const t = db.prepare('SELECT * FROM stock_transfers WHERE id = ?').get(req.params.id);
@@ -3383,9 +3535,12 @@ router.delete('/transfers/stock/:id', (req, res) => {
     const { manager_pin, manager_name, reason } = req.body;
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get() || {};
     const validPin = settings.manager_override_pin || '1234';
+    const cleanPin = manager_pin ? String(manager_pin).trim() : '';
+    const userPinCheck = cleanPin ? db.prepare("SELECT id FROM users WHERE pin = ? AND role IN ('admin', 'manager') AND status = 'active'").get(cleanPin) : null;
+    const isPinValid = userPinCheck || (cleanPin && cleanPin === validPin);
 
-    if (manager_pin && manager_pin !== validPin) {
-      return res.status(403).json({ error: 'رمز مرور المدير غير صحيح. لا يمكن إلغاء التحويل إلا بموافقة المدير العام.' });
+    if (manager_pin && !isPinValid) {
+      return res.status(403).json({ error: 'الرمز السري لتفويض المدير غير صحيح. لا يمكن إلغاء التحويل إلا بموافقة المدير العام أو مدير الفرع.' });
     }
 
     const t = db.prepare('SELECT * FROM stock_transfers WHERE id = ?').get(req.params.id);
@@ -3537,17 +3692,43 @@ router.get('/invoices/public/:invoiceNo', (req, res) => {
           .btn-print { background: #2563eb; color: #ffffff; }
           .btn-whatsapp { background: #16a34a; color: #ffffff; }
           @media print {
-            body { background: #ffffff; padding: 0; }
-            .container { box-shadow: none; border: none; max-width: 100%; border-radius: 0; }
-            .actions-bar, .no-print { display: none !important; }
-            .top-bar { background: #0f172a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            @page { size: A4 portrait; margin: 8mm 10mm; }
+            html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; color: #000000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .container { box-shadow: none !important; border: 1px solid #cbd5e1 !important; max-width: 100% !important; border-radius: 0 !important; }
+            .actions-bar, .no-print, .web-only { display: none !important; }
+            .print-only { display: block !important; }
+            .top-bar { display: none !important; }
+            .print-header { display: flex !important; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+            .section { padding: 12px 16px !important; }
+            table { font-size: 11px !important; }
+            th { background: #f1f5f9 !important; color: #0f172a !important; }
+            .totals-box { border: 1px solid #94a3b8 !important; }
           }
+          .print-only { display: none; }
         </style>
       </head>
       <body>
         <div class="container">
-          <!-- Top Bar -->
-          <div class="top-bar">
+          <!-- Official Print Header (Only visible on print/PDF) -->
+          <div class="print-only print-header" style="padding: 16px 20px 0 20px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <img src="/logo.svg" alt="شعار" style="max-height: 55px; max-width: 180px; object-contain;" />
+              <div>
+                <h2 style="font-size: 16px; font-weight: 900; color: #0f172a;">${storeName}</h2>
+                <p style="font-size: 10px; color: #475569;">س.ت: <strong>${settings.commercial_reg || '198425'}</strong> | ب.ض: <strong>${settings.tax_number || '654-321-987'}</strong></p>
+                <p style="font-size: 10px; color: #64748b;">📍 ${sale.branch_address || settings.address || 'القاهرة - مصر'} | 📞 ${sale.branch_phone || storePhone}</p>
+              </div>
+            </div>
+            <div style="text-align: left; font-size: 11px; line-height: 1.5;" dir="ltr">
+              <div style="font-weight: 900; font-size: 14px; color: #1e3a8a;">TAX INVOICE / فاتورة بيع</div>
+              <div>No: <strong style="font-family: monospace;">${sale.invoice_no}</strong></div>
+              <div>Date: <strong>${new Date(sale.created_at).toLocaleDateString('ar-EG')}</strong></div>
+              <div>Branch: <strong>${sale.branch_name || 'المركز الرئيسي'}</strong></div>
+            </div>
+          </div>
+
+          <!-- Top Bar (Web View) -->
+          <div class="top-bar web-only">
             <div class="badge">✓ فاتورة وشهادة ضمان إلكترونية معتمدة</div>
             <div class="header-info">
               <div>
@@ -3658,14 +3839,30 @@ router.get('/invoices/public/:invoiceNo', (req, res) => {
             </p>
           </div>
 
+          <!-- Print Signatures (Only on print) -->
+          <div class="print-only" style="padding: 20px 24px; border-top: 1px solid #cbd5e1; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; text-align: center; font-size: 11px;">
+              <div>
+                <p style="font-weight: bold;">توقيع واستلام العميل</p>
+                <div style="height: 35px; border-bottom: 1px dashed #94a3b8; margin-top: 6px;"></div>
+                <p style="color: #64748b; font-size: 10px; margin-top: 4px;">${sale.customer_name || 'المشتري'}</p>
+              </div>
+              <div>
+                <p style="font-weight: bold;">ختم واعتماد المعرض (البائع)</p>
+                <div style="height: 35px; border-bottom: 1px dashed #94a3b8; margin-top: 6px;"></div>
+                <p style="color: #64748b; font-size: 10px; margin-top: 4px;">${storeName}</p>
+              </div>
+            </div>
+          </div>
+
           <!-- Action Buttons Bar -->
           <div class="actions-bar no-print">
             <div style="font-size: 12px; color: #64748b; font-weight: 600;">
-              💡 يمكنك طباعة الفاتورة كـ Web Page مباشرة أو حفظها
+              💡 يمكنك طباعة الفاتورة الرسمية A4 مباشرة أو حفظها كملف PDF
             </div>
             <div style="display: flex; gap: 8px;">
               <button onclick="window.print()" class="btn btn-print">
-                🖨️ طباعة الفاتورة (Web Page)
+                🖨️ طباعة الفاتورة الرسمية (A4)
               </button>
               <a href="https://wa.me/20${storePhone.replace(/^0+/, '')}?text=${encodeURIComponent(`مرحباً دكان عبد العزيز، بخصوص الفاتورة رقم ${sale.invoice_no}`)}" target="_blank" class="btn btn-whatsapp">
                 💬 تواصل مع المعرض
@@ -3736,7 +3933,7 @@ router.post('/auth/login', (req, res) => {
 router.get('/users', (req, res) => {
   try {
     const users = db.prepare(`
-      SELECT u.id, u.username, u.name, u.role, u.branch_id, u.warehouse_id, u.phone, u.status, u.permissions, u.created_at,
+      SELECT u.id, u.username, u.name, u.role, u.branch_id, u.warehouse_id, u.phone, u.status, u.permissions, u.created_at, u.pin,
              b.name as branch_name, w.name as warehouse_name
       FROM users u
       LEFT JOIN branches b ON u.branch_id = b.id
@@ -3760,7 +3957,7 @@ router.get('/users', (req, res) => {
 
 router.post('/users', (req, res) => {
   try {
-    const { username, password, name, role, branch_id, warehouse_id, phone, status, permissions } = req.body;
+    const { username, password, name, role, branch_id, warehouse_id, phone, status, permissions, pin } = req.body;
     if (!username || !password || !name) {
       return res.status(400).json({ error: 'اسم المستخدم، كلمة المرور، والاسم ثلاثي مطلوبان' });
     }
@@ -3773,10 +3970,12 @@ router.post('/users', (req, res) => {
     const finalBranchId = (branch_id && Number(branch_id) !== 0) ? Number(branch_id) : null;
     const finalWarehouseId = (warehouse_id && Number(warehouse_id) !== 0) ? Number(warehouse_id) : null;
     const permsJson = permissions ? JSON.stringify(permissions) : null;
+    const userPin = (role === 'admin' || role === 'manager') ? (pin ? String(pin).trim() : '1234') : (pin ? String(pin).trim() : null);
+
     const info = db.prepare(`
-      INSERT INTO users (username, password, name, role, branch_id, warehouse_id, phone, status, permissions)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(username.trim(), password.trim(), name.trim(), role || 'cashier', finalBranchId, finalWarehouseId, phone || '', status || 'active', permsJson);
+      INSERT INTO users (username, password, name, role, branch_id, warehouse_id, phone, status, permissions, pin)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(username.trim(), password.trim(), name.trim(), role || 'cashier', finalBranchId, finalWarehouseId, phone || '', status || 'active', permsJson, userPin);
 
     logActivity(req, 'USER_CREATE', 'user', info.lastInsertRowid, `إنشاء مستخدم جديد: ${name} (${username}) بدور ${role}`);
 
@@ -3788,28 +3987,85 @@ router.post('/users', (req, res) => {
 
 router.put('/users/:id', (req, res) => {
   try {
-    const { name, role, branch_id, warehouse_id, phone, status, password, permissions } = req.body;
+    const { name, role, branch_id, warehouse_id, phone, status, password, permissions, pin } = req.body;
     const finalBranchId = (branch_id && Number(branch_id) !== 0) ? Number(branch_id) : null;
     const finalWarehouseId = (warehouse_id && Number(warehouse_id) !== 0) ? Number(warehouse_id) : null;
     const permsJson = permissions ? JSON.stringify(permissions) : null;
+    const userPin = pin !== undefined ? (pin ? String(pin).trim() : null) : undefined;
 
     if (password && password.trim()) {
-      db.prepare(`
-        UPDATE users 
-        SET name = ?, role = ?, branch_id = ?, warehouse_id = ?, phone = ?, status = ?, password = ?, permissions = ?
-        WHERE id = ?
-      `).run(name, role, finalBranchId, finalWarehouseId, phone || '', status || 'active', password.trim(), permsJson, req.params.id);
+      if (userPin !== undefined) {
+        db.prepare(`
+          UPDATE users 
+          SET name = ?, role = ?, branch_id = ?, warehouse_id = ?, phone = ?, status = ?, password = ?, permissions = ?, pin = ?
+          WHERE id = ?
+        `).run(name, role, finalBranchId, finalWarehouseId, phone || '', status || 'active', password.trim(), permsJson, userPin, req.params.id);
+      } else {
+        db.prepare(`
+          UPDATE users 
+          SET name = ?, role = ?, branch_id = ?, warehouse_id = ?, phone = ?, status = ?, password = ?, permissions = ?
+          WHERE id = ?
+        `).run(name, role, finalBranchId, finalWarehouseId, phone || '', status || 'active', password.trim(), permsJson, req.params.id);
+      }
     } else {
-      db.prepare(`
-        UPDATE users 
-        SET name = ?, role = ?, branch_id = ?, warehouse_id = ?, phone = ?, status = ?, permissions = ?
-        WHERE id = ?
-      `).run(name, role, finalBranchId, finalWarehouseId, phone || '', status || 'active', permsJson, req.params.id);
+      if (userPin !== undefined) {
+        db.prepare(`
+          UPDATE users 
+          SET name = ?, role = ?, branch_id = ?, warehouse_id = ?, phone = ?, status = ?, permissions = ?, pin = ?
+          WHERE id = ?
+        `).run(name, role, finalBranchId, finalWarehouseId, phone || '', status || 'active', permsJson, userPin, req.params.id);
+      } else {
+        db.prepare(`
+          UPDATE users 
+          SET name = ?, role = ?, branch_id = ?, warehouse_id = ?, phone = ?, status = ?, permissions = ?
+          WHERE id = ?
+        `).run(name, role, finalBranchId, finalWarehouseId, phone || '', status || 'active', permsJson, req.params.id);
+      }
     }
 
     logActivity(req, 'USER_UPDATE', 'user', req.params.id, `تحديث بيانات وصلاحيات المستخدم: ${name} (الحالة: ${status})`);
 
     res.json({ success: true, message: 'تم تحديث بيانات وصلاحيات المستخدم بنجاح' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Verification of Personal Manager Override PIN (Requirement 17)
+router.post('/auth/verify-pin', (req, res) => {
+  try {
+    const { pin } = req.body;
+    if (!pin) {
+      return res.status(400).json({ valid: false, error: 'الرمز السري مطلوب' });
+    }
+    const cleanPin = String(pin).trim();
+
+    // Check individual PIN of active managers and admins
+    const authorizedUser = db.prepare(`
+      SELECT id, name, username, role, branch_id 
+      FROM users 
+      WHERE pin = ? AND role IN ('admin', 'manager') AND status = 'active'
+    `).get(cleanPin);
+
+    if (authorizedUser) {
+      return res.json({ 
+        valid: true, 
+        user: { 
+          id: authorizedUser.id, 
+          name: authorizedUser.name, 
+          role: authorizedUser.role,
+          role_title: authorizedUser.role === 'admin' ? 'المدير العام' : 'مدير الفرع'
+        } 
+      });
+    }
+
+    // Fallback to global setting PIN
+    const settings = db.prepare('SELECT manager_override_pin FROM settings WHERE id = 1').get();
+    if (settings && settings.manager_override_pin && String(settings.manager_override_pin).trim() === cleanPin) {
+      return res.json({ valid: true, user: { id: 1, name: 'المدير العام (رمز النظام العام)', role: 'admin', role_title: 'المدير العام' } });
+    }
+
+    return res.status(401).json({ valid: false, error: 'الرمز السري لتفويض المدير غير صحيح أو غير مفوض' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4506,9 +4762,9 @@ router.post('/inventory/audit', (req, res) => {
     // Clean list
     const scannedSet = new Set(scanned_serials.map(s => String(s).trim().toUpperCase()).filter(Boolean));
 
-    // Get expected in_stock serials in this warehouse
+    // Get expected in_stock serials in this warehouse with product costs
     const dbSerials = db.prepare(`
-      SELECT ps.id, ps.serial_number, ps.product_id, ps.status, p.name as product_name, p.model_number
+      SELECT ps.id, ps.serial_number, ps.product_id, ps.status, p.name as product_name, p.model_number, p.buy_price, p.sell_price
       FROM product_serials ps
       JOIN products p ON ps.product_id = p.id
       WHERE ps.warehouse_id = ? AND ps.status = 'in_stock'
@@ -4528,7 +4784,7 @@ router.post('/inventory/audit', (req, res) => {
       } else {
         // Look up if serial exists elsewhere or not in DB
         const anywhere = db.prepare(`
-          SELECT ps.id, ps.serial_number, ps.product_id, ps.status, ps.warehouse_id, p.name as product_name, w.name as warehouse_name
+          SELECT ps.id, ps.serial_number, ps.product_id, ps.status, ps.warehouse_id, p.name as product_name, p.model_number, p.buy_price, w.name as warehouse_name
           FROM product_serials ps
           JOIN products p ON ps.product_id = p.id
           LEFT JOIN warehouses w ON ps.warehouse_id = w.id
@@ -4538,6 +4794,8 @@ router.post('/inventory/audit', (req, res) => {
         surplus.push({
           serial_number: sn,
           product_name: anywhere ? anywhere.product_name : 'غير مسجل بقاعدة البيانات',
+          model_number: anywhere ? anywhere.model_number : '',
+          buy_price: anywhere ? (Number(anywhere.buy_price) || 0) : 0,
           status: anywhere ? `موجود بمخزن (${anywhere.warehouse_name || 'آخر'}) بحالة (${anywhere.status})` : 'سيريال مجهول جديد'
         });
       }
@@ -4549,6 +4807,13 @@ router.post('/inventory/audit', (req, res) => {
         missing.push(item);
       }
     }
+
+    // Financial valuations (Requirement 8)
+    const totalExpectedCost = dbSerials.reduce((sum, it) => sum + (Number(it.buy_price) || 0), 0);
+    const matchedCost = matched.reduce((sum, it) => sum + (Number(it.buy_price) || 0), 0);
+    const missingCost = missing.reduce((sum, it) => sum + (Number(it.buy_price) || 0), 0);
+    const surplusCost = surplus.reduce((sum, it) => sum + (Number(it.buy_price) || 0), 0);
+    const accuracyRate = dbSerials.length > 0 ? Number(((matched.length / dbSerials.length) * 100).toFixed(1)) : 100;
 
     // 3. Save audit record
     const auditNo = generateInvoiceNo('AUDIT');
@@ -4572,7 +4837,7 @@ router.post('/inventory/audit', (req, res) => {
     missing.forEach(it => insertAuditItem.run(auditId, it.serial_number, it.product_id, it.product_name, 'missing', 'عجز - لم يظهر بالمسح'));
     surplus.forEach(it => insertAuditItem.run(auditId, it.serial_number, null, it.product_name, 'surplus', it.status));
 
-    logActivity(req, 'INVENTORY_AUDIT', 'inventory_audit', auditId, `جرد مخزني ${auditNo} - مطابق: ${matched.length} - عجز: ${missing.length} - فائض: ${surplus.length}`);
+    logActivity(req, 'INVENTORY_AUDIT', 'inventory_audit', auditId, `جرد مخزني ${auditNo} - مطابق: ${matched.length} - عجز: ${missing.length} (${missingCost} ج.م) - فائض: ${surplus.length} (${surplusCost} ج.م)`);
 
     res.json({
       success: true,
@@ -4583,12 +4848,63 @@ router.post('/inventory/audit', (req, res) => {
         total_scanned: scannedSet.size,
         matched_count: matched.length,
         missing_count: missing.length,
-        surplus_count: surplus.length
+        surplus_count: surplus.length,
+        total_expected_cost: totalExpectedCost,
+        matched_cost: matchedCost,
+        missing_cost: missingCost,
+        surplus_cost: surplusCost,
+        accuracy_rate: accuracyRate
       },
       matched,
       missing,
       surplus
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pre-Audit Expected Stock in Warehouse (Requirement 8)
+router.get('/inventory/warehouses/:id/expected', (req, res) => {
+  try {
+    const list = db.prepare(`
+      SELECT ps.id, ps.serial_number, ps.product_id, p.name as product_name, p.model_number, p.buy_price, p.sell_price
+      FROM product_serials ps
+      JOIN products p ON ps.product_id = p.id
+      WHERE ps.warehouse_id = ? AND ps.status = 'in_stock'
+      ORDER BY p.name ASC
+    `).all(req.params.id);
+
+    const totalCount = list.length;
+    const totalCost = list.reduce((sum, it) => sum + (Number(it.buy_price) || 0), 0);
+    res.json({ totalCount, totalCost, items: list });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reconcile / Commit Inventory Audit (Requirement 8)
+router.post('/inventory/audits/:id/reconcile', (req, res) => {
+  try {
+    const audit = db.prepare('SELECT * FROM inventory_audits WHERE id = ?').get(req.params.id);
+    if (!audit) return res.status(404).json({ error: 'محضر الجرد غير موجود' });
+    if (audit.status === 'reconciled') {
+      return res.status(400).json({ error: 'تم اعتماد وتسوية فروق هذا المحضر مسبقاً' });
+    }
+
+    const missingItems = db.prepare("SELECT * FROM inventory_audit_items WHERE audit_id = ? AND status = 'missing'").all(req.params.id);
+
+    db.transaction(() => {
+      for (const m of missingItems) {
+        db.prepare("UPDATE product_serials SET status = 'missing', notes = ? WHERE serial_number = ?").run(
+          `عجز بموجب محضر الجرد ${audit.audit_no}`, m.serial_number
+        );
+      }
+      db.prepare("UPDATE inventory_audits SET status = 'reconciled' WHERE id = ?").run(req.params.id);
+    })();
+
+    logActivity(req, 'INVENTORY_AUDIT_RECONCILED', 'inventory_audit', req.params.id, `اعتماد وتسوية فروق الجرد ${audit.audit_no} وتسجيل ${missingItems.length} جهاز كعجز`);
+    res.json({ success: true, message: `تم اعتماد وتسوية فروق الجرد بنجاح وتسوية حالة ${missingItems.length} جهاز في المخزون!` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4932,10 +5248,10 @@ router.get('/reconciliation/daily', (req, res) => {
         s.invoice_no,
         s.branch_id,
         c.name as customer_name
-      FROM returns r
+      FROM sale_returns r
       JOIN sales s ON r.sale_id = s.id
       LEFT JOIN customers c ON s.customer_id = c.id
-      WHERE DATE(r.created_at) = DATE(?)
+      WHERE DATE(r.return_date) = DATE(?)
       ORDER BY r.id DESC
     `).all(targetDate);
 
@@ -5885,6 +6201,26 @@ router.get('/accounting/dashboard', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Manual / Triggered Accounting Backfill
+router.post('/accounting/backfill', (req, res) => {
+  try {
+    const { runBackfill } = require('./backfill_accounting');
+    runBackfill();
+    const count = db.prepare('SELECT count(*) as c FROM journal_entries').get().c;
+    res.json({ success: true, message: `تم ترحيل وتوليد القيود المحاسبية بنجاح (${count} قيد مسجل)!` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Auto-run backfill on startup if entries count is 0
+try {
+  const { runBackfill } = require('./backfill_accounting');
+  runBackfill();
+} catch (e) {
+  console.error('Accounting auto-backfill notice:', e.message);
+}
 
 module.exports = router;
 

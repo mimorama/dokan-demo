@@ -433,7 +433,17 @@ export default function Purchases({ settings, currentUser }) {
                     const rev = p.review_status || 'pending_review';
                     return (
                       <tr key={p.id} className="hover:bg-slate-50/70 transition">
-                        <td className="p-3 font-mono font-bold text-blue-700">{p.invoice_no}</td>
+                        <td className="p-3">
+                          <button
+                            type="button"
+                            onClick={() => handleViewPurchaseDetails(p.id)}
+                            className="font-mono font-black text-blue-700 hover:text-blue-900 bg-blue-50/80 hover:bg-blue-100/90 px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs group"
+                            title="عرض تفاصيل عقد التوريد وفاتورة الشراء"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition-transform" />
+                            <span>{p.invoice_no}</span>
+                          </button>
+                        </td>
                         <td className="p-3 text-slate-600 font-mono">{p.created_at?.slice(0, 10)}</td>
                         <td className="p-3">
                           <span className="font-bold text-slate-900 block">{p.supplier_name || 'مورد عام'}</span>
@@ -520,7 +530,17 @@ export default function Purchases({ settings, currentUser }) {
                     const rev = s.review_status || 'pending_review';
                     return (
                       <tr key={s.id} className="hover:bg-slate-50/70 transition">
-                        <td className="p-3 font-mono font-bold text-blue-700">{s.invoice_no}</td>
+                        <td className="p-3">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAuditModal('sale', s)}
+                            className="font-mono font-black text-blue-700 hover:text-blue-900 bg-blue-50/80 hover:bg-blue-100/90 px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs group"
+                            title="تدقيق وعرض الفاتورة"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition-transform" />
+                            <span>{s.invoice_no}</span>
+                          </button>
+                        </td>
                         <td className="p-3 font-mono text-slate-500">{s.created_at?.slice(0, 10)}</td>
                         <td className="p-3">
                           <span className="font-bold text-slate-900 block">{s.customer_name || 'عميل نقدي'}</span>

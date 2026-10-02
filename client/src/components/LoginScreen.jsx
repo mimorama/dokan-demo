@@ -99,31 +99,15 @@ export default function LoginScreen({ settings, onLoginSuccess }) {
         <div className="absolute inset-0 bg-[radial-gradient(#94a3b8_1px,transparent_1px)] [background-size:24px_24px] opacity-35"></div>
       </div>
 
-      {/* Top Bar / Status Strip */}
-      <header className="relative z-10 w-full border-b border-slate-200/90 bg-white/85 backdrop-blur-md px-4 sm:px-8 py-3 shadow-xs">
-        <div className="max-w-6xl w-full mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300/80 text-emerald-800 font-bold shadow-2xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>السيرفر متصل ومؤمن</span>
-            </span>
-            <span className="hidden sm:flex items-center gap-1.5 text-slate-600 font-mono text-[11px] bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-              <Server className="w-3.5 h-3.5 text-blue-600" />
-              <span>منفذ النظام: 5959</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3 text-slate-600">
-            {currentTime && (
-              <span className="hidden md:flex items-center gap-1.5 text-[11.5px] font-medium text-slate-700">
-                <Clock className="w-3.5 h-3.5 text-blue-600" />
-                <span>{currentTime}</span>
-              </span>
-            )}
-            <span className="px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10.5px] font-mono font-bold tracking-wider">
-              v3.1.0
-            </span>
-          </div>
+      {/* Top Bar: Centered Date & Time (Requirement 15) */}
+      <header className="relative z-10 w-full border-b border-slate-200/90 bg-white/85 backdrop-blur-md px-4 sm:px-8 py-2.5 shadow-xs">
+        <div className="max-w-6xl w-full mx-auto flex items-center justify-center text-xs">
+          {currentTime && (
+            <div className="flex items-center gap-2 px-4 py-1 rounded-full bg-slate-100/90 border border-slate-200 text-slate-700 font-bold text-xs shadow-2xs">
+              <Clock className="w-4 h-4 text-blue-600" />
+              <span>{currentTime}</span>
+            </div>
+          )}
         </div>
       </header>
 

@@ -42,6 +42,10 @@ export default function Accounting({ settings, currentUser }) {
   const [incomeStatementData, setIncomeStatementData] = useState(null);
   const [balanceSheetData, setBalanceSheetData] = useState(null);
 
+  // Official Print States (Requirement 12)
+  const [selectedJournalVoucher, setSelectedJournalVoucher] = useState(null);
+  const [printFinancialReport, setPrintFinancialReport] = useState(null); // 'trial', 'ledger', 'income', 'balance_sheet', 'chart', 'dashboard'
+
   // New Account Modal State
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [newAccountForm, setNewAccountForm] = useState({
@@ -305,12 +309,12 @@ export default function Accounting({ settings, currentUser }) {
           )}
 
           <button
-            onClick={() => window.print()}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 transition-all cursor-pointer flex items-center gap-1.5 no-print"
-            title="طباعة التقرير المحاسبي الحالي"
+            onClick={() => setPrintFinancialReport(activeTab)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 no-print"
+            title="طباعة التقرير المحاسبي الرسمي الحالي (A4)"
           >
-            <Printer className="w-4 h-4 text-blue-600" />
-            <span>طباعة</span>
+            <Printer className="w-4 h-4" />
+            <span>طباعة التقرير الرسمي (A4)</span>
           </button>
         </div>
       </div>
@@ -542,6 +546,15 @@ export default function Accounting({ settings, currentUser }) {
                           {entry.reference_type} #{entry.reference_id}
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedJournalVoucher(entry)}
+                        className="flex items-center gap-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg font-bold text-[11px] transition shadow-2xs cursor-pointer"
+                        title="عرض وطباعة سند قيد محاسبي مزدوج رسمي A4"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>طباعة سند القيد (A4)</span>
+                      </button>
                     </div>
                   </div>
 
@@ -650,8 +663,18 @@ export default function Accounting({ settings, currentUser }) {
                     الطبيعة المحاسبية: {ledgerData.account?.normal_balance === 'debit' ? 'مدين' : 'دائن'}
                   </span>
                 </div>
-                <div className="text-left font-mono font-black text-indigo-900">
-                  الرصيد الختامي: {Number(ledgerData.account?.current_balance || 0).toLocaleString()} {currency}
+                <div className="flex items-center gap-4">
+                  <div className="text-left font-mono font-black text-indigo-900">
+                    الرصيد الختامي: {Number(ledgerData.account?.current_balance || 0).toLocaleString()} {currency}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPrintFinancialReport('ledger')}
+                    className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-xl font-bold text-xs shadow-xs cursor-pointer transition no-print"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>طباعة كشف الحساب (A4)</span>
+                  </button>
                 </div>
               </div>
 
@@ -696,8 +719,18 @@ export default function Accounting({ settings, currentUser }) {
       {activeTab === 'trial' && trialBalanceData && (
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="font-extrabold text-sm text-slate-800">ميزان المراجعة بالأرصدة (Trial Balance)</h3>
-            <span className="text-xs text-slate-500">حتى تاريخ: {new Date().toISOString().slice(0, 10)}</span>
+            <div>
+              <h3 className="font-extrabold text-sm text-slate-800">ميزان المراجعة بالأرصدة (Trial Balance)</h3>
+              <span className="text-xs text-slate-500">حتى تاريخ: {new Date().toISOString().slice(0, 10)}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPrintFinancialReport('trial')}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-xs cursor-pointer transition no-print"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>طباعة ميزان المراجعة الرسمي (A4)</span>
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
@@ -744,9 +777,19 @@ export default function Accounting({ settings, currentUser }) {
       {/* TAB 6: INCOME STATEMENT */}
       {activeTab === 'income' && incomeStatementData && (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs max-w-4xl mx-auto space-y-6">
-          <div className="text-center border-b border-slate-200 pb-4">
-            <h3 className="text-lg font-black text-slate-900">قائمة الدخل والأرباح والخسائر</h3>
-            <p className="text-xs text-slate-500 mt-1">{storeName} - عن الفترة المنتهية في {new Date().toISOString().slice(0, 10)}</p>
+          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+            <div>
+              <h3 className="text-lg font-black text-slate-900">قائمة الدخل والأرباح والخسائر</h3>
+              <p className="text-xs text-slate-500 mt-1">{storeName} - عن الفترة المنتهية في {new Date().toISOString().slice(0, 10)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPrintFinancialReport('income')}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-xs cursor-pointer transition no-print"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>طباعة قائمة الدخل الرسمية (A4)</span>
+            </button>
           </div>
 
           <div className="space-y-4 text-xs">
@@ -808,9 +851,19 @@ export default function Accounting({ settings, currentUser }) {
       {/* TAB 7: BALANCE SHEET */}
       {activeTab === 'balance_sheet' && balanceSheetData && (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs max-w-4xl mx-auto space-y-6">
-          <div className="text-center border-b border-slate-200 pb-4">
-            <h3 className="text-lg font-black text-slate-900">الميزانية العمومية وقائمة المركز المالي</h3>
-            <p className="text-xs text-slate-500 mt-1">{storeName} - كما هي في {new Date().toISOString().slice(0, 10)}</p>
+          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+            <div>
+              <h3 className="text-lg font-black text-slate-900">الميزانية العمومية وقائمة المركز المالي</h3>
+              <p className="text-xs text-slate-500 mt-1">{storeName} - كما هي في {new Date().toISOString().slice(0, 10)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPrintFinancialReport('balance_sheet')}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-xs cursor-pointer transition no-print"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>طباعة الميزانية العمومية الرسمية (A4)</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
@@ -1155,6 +1208,558 @@ export default function Accounting({ settings, currentUser }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PRINTABLE JOURNAL VOUCHER (Requirement 12) */}
+      {selectedJournalVoucher && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          {/* Isolated Print Styles */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 8mm 10mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #journal-voucher-printable-area,
+              #journal-voucher-printable-area * {
+                visibility: visible !important;
+              }
+              #journal-voucher-printable-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Controls Bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3 no-print">
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-sm">سند قيد محاسبي مزدوج معتمد</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">رقم القيد: {selectedJournalVoucher.entry_no}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-98"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة سند القيد (A4)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedJournalVoucher(null)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content */}
+            <div className="p-6 overflow-y-auto" dir="rtl">
+              <div id="journal-voucher-printable-area" className="border-2 border-slate-900 rounded-2xl p-6 bg-white space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3">
+                  <div className="flex items-center gap-3">
+                    {settings?.logo_url && (
+                      <img src={settings.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+                    )}
+                    <div>
+                      <h2 className="text-base font-black text-slate-900">{storeName}</h2>
+                      <p className="text-[11px] text-slate-600">الإدارة المالية - قسم الحسابات العامة وشجرة الحسابات</p>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono text-xs space-y-0.5" dir="ltr">
+                    <div className="font-black text-slate-900">JOURNAL VOUCHER</div>
+                    <div className="text-slate-800 font-bold">Entry: {selectedJournalVoucher.entry_no}</div>
+                    <div className="text-slate-600">Date: {selectedJournalVoucher.entry_date}</div>
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="text-center py-1.5 bg-slate-100 rounded-xl border border-slate-300">
+                  <span className="font-black text-sm text-slate-900 tracking-wide">
+                    سند قيد محاسبي مزدوج (اليومية العامة)
+                  </span>
+                </div>
+
+                {/* Voucher Meta */}
+                <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                  <div className="col-span-2">
+                    <span className="text-slate-500 font-bold block text-[11px]">البيان العام للقيد:</span>
+                    <span className="font-black text-slate-900 text-xs">{selectedJournalVoucher.description}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block text-[11px]">المرجع المحاسبي:</span>
+                    <span className="font-mono font-bold text-slate-800 text-xs">
+                      {selectedJournalVoucher.reference_type ? `${selectedJournalVoucher.reference_type} #${selectedJournalVoucher.reference_id}` : 'قيد تسوية يدوي'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lines Table */}
+                <div className="border border-slate-300 rounded-xl overflow-hidden">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-800 text-white font-bold">
+                      <tr>
+                        <th className="p-2 text-center w-8">#</th>
+                        <th className="p-2 w-24">كود الحساب</th>
+                        <th className="p-2 w-48">اسم الحساب</th>
+                        <th className="p-2">البيان التحليلي</th>
+                        <th className="p-2 w-28 text-left">مدين ({currency})</th>
+                        <th className="p-2 w-28 text-left">دائن ({currency})</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {selectedJournalVoucher.lines?.map((line, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                          <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                          <td className="p-2 font-mono font-bold text-indigo-700" dir="ltr">{line.account_code}</td>
+                          <td className="p-2 font-extrabold text-slate-900">{line.account_name}</td>
+                          <td className="p-2 text-slate-600 text-[11px]">{line.description || selectedJournalVoucher.description}</td>
+                          <td className="p-2 font-mono font-bold text-emerald-700 text-left" dir="ltr">
+                            {Number(line.debit) > 0 ? Number(line.debit).toLocaleString() : '—'}
+                          </td>
+                          <td className="p-2 font-mono font-bold text-rose-700 text-left" dir="ltr">
+                            {Number(line.credit) > 0 ? Number(line.credit).toLocaleString() : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-black text-xs">
+                      <tr>
+                        <td colSpan="4" className="p-2.5 text-slate-900 font-bold text-center">
+                          الإجمالي العام للقيد المحاسبي (متوازن ومعتمد)
+                        </td>
+                        <td className="p-2.5 text-left font-mono text-emerald-800" dir="ltr">
+                          {Number(selectedJournalVoucher.total_debit).toLocaleString()} {currency}
+                        </td>
+                        <td className="p-2.5 text-left font-mono text-rose-800" dir="ltr">
+                          {Number(selectedJournalVoucher.total_credit).toLocaleString()} {currency}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Signatures */}
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t-2 border-slate-900 text-center text-xs">
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">إعداد المحاسب المختص</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">مراجعة رئيس الحسابات</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">اعتماد المدير المالي والإدارة</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PRINTABLE FINANCIAL REPORT (Requirement 12) */}
+      {printFinancialReport && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          {/* Isolated Print Styles */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 8mm 10mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #financial-report-printable-area,
+              #financial-report-printable-area * {
+                visibility: visible !important;
+              }
+              #financial-report-printable-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Controls Bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3 no-print">
+              <div className="flex items-center gap-2.5">
+                <Printer className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-sm">
+                    {printFinancialReport === 'trial' ? 'طباعة ميزان المراجعة الرسمي المعمد' :
+                     printFinancialReport === 'ledger' ? 'طباعة كشف حساب دفتر الأستاذ العام' :
+                     printFinancialReport === 'income' ? 'طباعة قائمة الدخل والأرباح والخسائر' :
+                     printFinancialReport === 'balance_sheet' ? 'طباعة الميزانية العمومية والمركز المالي' :
+                     printFinancialReport === 'chart' ? 'طباعة دليل وشجرة الحسابات الموحدة' :
+                     'طباعة تقرير قيود اليومية العامة'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">جاهز للطباعة على ورق قياس A4 بمواصفات معتمدة</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-98"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة فورية (A4)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintFinancialReport(null)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content */}
+            <div className="p-6 overflow-y-auto" dir="rtl">
+              <div id="financial-report-printable-area" className="border-2 border-slate-900 rounded-2xl p-6 bg-white space-y-4 text-xs">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3">
+                  <div className="flex items-center gap-3">
+                    {settings?.logo_url && (
+                      <img src={settings.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+                    )}
+                    <div>
+                      <h2 className="text-base font-black text-slate-900">{storeName}</h2>
+                      <p className="text-[11px] text-slate-600">الإدارة المالية والحسابات الختامية العامة</p>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono text-xs space-y-0.5" dir="ltr">
+                    <div className="font-black text-slate-900">FINANCIAL REPORT</div>
+                    <div className="text-slate-600">Date: {new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}</div>
+                    <div className="text-[11px] text-slate-500">Currency: Egyptian Pound (EGP)</div>
+                  </div>
+                </div>
+
+                {/* Report Title */}
+                <div className="text-center py-2 bg-slate-100 rounded-xl border border-slate-300">
+                  <span className="font-black text-sm text-slate-900 tracking-wide block">
+                    {printFinancialReport === 'trial' ? 'ميزان المراجعة بالأرصدة والمجاميع المعتمد' :
+                     printFinancialReport === 'ledger' ? `كشف حساب دفتر الأستاذ العام: ${ledgerData?.account?.code} - ${ledgerData?.account?.name}` :
+                     printFinancialReport === 'income' ? 'قائمة الدخل والأرباح والخسائر عن الفترة المنتهية' :
+                     printFinancialReport === 'balance_sheet' ? 'الميزانية العمومية وقائمة المركز المالي' :
+                     printFinancialReport === 'chart' ? 'دليل وشجرة الحسابات المالية الموحدة' :
+                     'دفتر قيود اليومية العامة المزدوجة'}
+                  </span>
+                  <span className="text-[11px] text-slate-600 block mt-0.5">
+                    تاريخ التقرير: {new Date().toISOString().slice(0, 10)}
+                  </span>
+                </div>
+
+                {/* 1. Trial Balance Report */}
+                {printFinancialReport === 'trial' && trialBalanceData && (
+                  <div className="border border-slate-300 rounded-xl overflow-hidden">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-800 text-white font-bold">
+                        <tr>
+                          <th className="p-2 w-24">كود الحساب</th>
+                          <th className="p-2">اسم الحساب</th>
+                          <th className="p-2 w-32">نوع الحساب</th>
+                          <th className="p-2 w-32 text-left">أرصدة مدينة ({currency})</th>
+                          <th className="p-2 w-32 text-left">أرصدة دائنة ({currency})</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {trialBalanceData.rows?.map((row, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                            <td className="p-2 font-mono font-bold text-indigo-700" dir="ltr">{row.code}</td>
+                            <td className="p-2 font-bold text-slate-900">{row.name}</td>
+                            <td className="p-2 text-slate-600 text-[11px]">{getAccountTypeName(row.type)}</td>
+                            <td className="p-2 font-mono font-bold text-emerald-700 text-left" dir="ltr">
+                              {Number(row.debit_balance) > 0 ? Number(row.debit_balance).toLocaleString() : '—'}
+                            </td>
+                            <td className="p-2 font-mono font-bold text-rose-700 text-left" dir="ltr">
+                              {Number(row.credit_balance) > 0 ? Number(row.credit_balance).toLocaleString() : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-100 border-t-2 border-slate-400 font-black text-xs">
+                        <tr>
+                          <td colSpan="3" className="p-2.5 text-center text-slate-900">إجمالي ميزان المراجعة (متوازن)</td>
+                          <td className="p-2.5 text-left font-mono text-emerald-800" dir="ltr">
+                            {Number(trialBalanceData.total_debit).toLocaleString()} {currency}
+                          </td>
+                          <td className="p-2.5 text-left font-mono text-rose-800" dir="ltr">
+                            {Number(trialBalanceData.total_credit).toLocaleString()} {currency}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+
+                {/* 2. Ledger Statement Report */}
+                {printFinancialReport === 'ledger' && ledgerData && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+                      <div>
+                        <span className="text-slate-500 font-bold block">كود واسم الحساب:</span>
+                        <span className="font-extrabold text-slate-900">{ledgerData.account?.code} - {ledgerData.account?.name}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-bold block">الطبيعة المحاسبية:</span>
+                        <span className="font-bold text-slate-800">{ledgerData.account?.normal_balance === 'debit' ? 'مدين (Debit)' : 'دائن (Credit)'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-bold block">الرصيد الختامي الحالي:</span>
+                        <span className="font-mono font-black text-indigo-900" dir="ltr">
+                          {Number(ledgerData.account?.current_balance || 0).toLocaleString()} {currency}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-300 rounded-xl overflow-hidden">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-800 text-white font-bold">
+                          <tr>
+                            <th className="p-2 w-24">التاريخ</th>
+                            <th className="p-2 w-28">رقم القيد</th>
+                            <th className="p-2">البيان والتفصيل</th>
+                            <th className="p-2 w-24 text-left">مدين</th>
+                            <th className="p-2 w-24 text-left">دائن</th>
+                            <th className="p-2 w-28 text-left">الرصيد المتراكم</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {ledgerData.lines?.map((line, idx) => (
+                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                              <td className="p-2 font-mono text-[11px]" dir="ltr">{line.entry_date}</td>
+                              <td className="p-2 font-mono font-bold text-indigo-700" dir="ltr">{line.entry_no}</td>
+                              <td className="p-2 text-slate-800">{line.description}</td>
+                              <td className="p-2 font-mono font-bold text-emerald-700 text-left" dir="ltr">
+                                {Number(line.debit) > 0 ? Number(line.debit).toLocaleString() : '—'}
+                              </td>
+                              <td className="p-2 font-mono font-bold text-rose-700 text-left" dir="ltr">
+                                {Number(line.credit) > 0 ? Number(line.credit).toLocaleString() : '—'}
+                              </td>
+                              <td className="p-2 font-mono font-black text-slate-900 text-left" dir="ltr">
+                                {Number(line.running_balance).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Income Statement Report */}
+                {printFinancialReport === 'income' && incomeStatementData && (
+                  <div className="space-y-4">
+                    <div className="border border-emerald-300 rounded-xl p-3 bg-emerald-50/30 space-y-2">
+                      <div className="font-black text-emerald-950 pb-1 border-b border-emerald-200">1. الإيرادات التشغيلية (Revenues)</div>
+                      <div className="space-y-1">
+                        {incomeStatementData.revenues?.map((r, i) => (
+                          <div key={i} className="flex justify-between py-1 border-b border-slate-100">
+                            <span className="font-bold text-slate-700">{r.code} - {r.name}</span>
+                            <span className="font-mono font-bold text-emerald-700" dir="ltr">{Number(r.amount).toLocaleString()} {currency}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between pt-1 font-black text-emerald-900 text-sm">
+                        <span>إجمالي الإيرادات:</span>
+                        <span dir="ltr">{Number(incomeStatementData.total_revenue).toLocaleString()} {currency}</span>
+                      </div>
+                    </div>
+
+                    <div className="border border-rose-300 rounded-xl p-3 bg-rose-50/30 space-y-2">
+                      <div className="font-black text-rose-950 pb-1 border-b border-rose-200">2. المصروفات التشغيلية والعمومية (Expenses)</div>
+                      <div className="space-y-1">
+                        {incomeStatementData.expenses?.map((e, i) => (
+                          <div key={i} className="flex justify-between py-1 border-b border-slate-100">
+                            <span className="font-bold text-slate-700">{e.code} - {e.name}</span>
+                            <span className="font-mono font-bold text-rose-700" dir="ltr">{Number(e.amount).toLocaleString()} {currency}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between pt-1 font-black text-rose-900 text-sm">
+                        <span>إجمالي المصروفات:</span>
+                        <span dir="ltr">{Number(incomeStatementData.total_expense).toLocaleString()} {currency}</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 text-white p-3.5 rounded-xl flex items-center justify-between text-sm font-black">
+                      <span>صافي الأرباح المحاسبية المعتمدة للفترة:</span>
+                      <span className="font-mono text-emerald-400 text-base" dir="ltr">
+                        {Number(incomeStatementData.net_income).toLocaleString()} {currency}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Balance Sheet Report */}
+                {printFinancialReport === 'balance_sheet' && balanceSheetData && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Assets */}
+                      <div className="border border-indigo-200 rounded-xl p-3 bg-indigo-50/20 space-y-2">
+                        <div className="font-black text-indigo-950 pb-1 border-b border-indigo-200">الأصول (Assets)</div>
+                        <div className="space-y-1">
+                          {balanceSheetData.assets?.map((a, i) => (
+                            <div key={i} className="flex justify-between py-1 border-b border-slate-100">
+                              <span className="font-bold text-slate-700">{a.code} - {a.name}</span>
+                              <span className="font-mono font-bold text-slate-900" dir="ltr">{Number(a.amount).toLocaleString()} {currency}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-indigo-300 font-black text-indigo-900 text-sm">
+                          <span>مجموع الأصول:</span>
+                          <span dir="ltr">{Number(balanceSheetData.total_assets).toLocaleString()} {currency}</span>
+                        </div>
+                      </div>
+
+                      {/* Liabilities & Equity */}
+                      <div className="border border-slate-300 rounded-xl p-3 bg-slate-50/40 space-y-3">
+                        <div>
+                          <div className="font-black text-rose-950 pb-1 border-b border-rose-200">الخصوم (Liabilities)</div>
+                          <div className="space-y-1 mt-1">
+                            {balanceSheetData.liabilities?.map((l, i) => (
+                              <div key={i} className="flex justify-between py-0.5 border-b border-slate-100">
+                                <span className="font-bold text-slate-700">{l.code} - {l.name}</span>
+                                <span className="font-mono font-bold text-slate-900" dir="ltr">{Number(l.amount).toLocaleString()} {currency}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between pt-1 font-bold text-rose-900">
+                            <span>مجموع الخصوم:</span>
+                            <span dir="ltr">{Number(balanceSheetData.total_liabilities).toLocaleString()} {currency}</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="font-black text-emerald-950 pb-1 border-b border-emerald-200">حقوق الملكية (Equity)</div>
+                          <div className="space-y-1 mt-1">
+                            {balanceSheetData.equity?.map((e, i) => (
+                              <div key={i} className="flex justify-between py-0.5 border-b border-slate-100">
+                                <span className="font-bold text-slate-700">{e.code} - {e.name}</span>
+                                <span className="font-mono font-bold text-slate-900" dir="ltr">{Number(e.amount).toLocaleString()} {currency}</span>
+                              </div>
+                            ))}
+                            <div className="flex justify-between py-0.5 border-b border-slate-100 font-bold text-indigo-700">
+                              <span>أرباح الفترة:</span>
+                              <span className="font-mono" dir="ltr">{Number(balanceSheetData.current_year_earnings || 0).toLocaleString()} {currency}</span>
+                            </div>
+                          </div>
+                          <div className="flex justify-between pt-1 font-bold text-emerald-900">
+                            <span>مجموع حقوق الملكية:</span>
+                            <span dir="ltr">{Number(balanceSheetData.total_equity).toLocaleString()} {currency}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between pt-2 border-t-2 border-slate-900 font-black text-slate-900 text-sm">
+                          <span>مجموع الخصوم وحقوق الملكية:</span>
+                          <span dir="ltr">{Number(balanceSheetData.total_liabilities_and_equity).toLocaleString()} {currency}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. Chart of Accounts Report */}
+                {printFinancialReport === 'chart' && (
+                  <div className="border border-slate-300 rounded-xl overflow-hidden">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-800 text-white font-bold">
+                        <tr>
+                          <th className="p-2 w-24">كود الحساب</th>
+                          <th className="p-2">اسم الحساب</th>
+                          <th className="p-2 w-32">نوع الحساب</th>
+                          <th className="p-2 w-32">الطبيعة</th>
+                          <th className="p-2 w-36 text-left">الرصيد الحالي ({currency})</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {accounts.map((acc, idx) => (
+                          <tr key={acc.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                            <td className="p-2 font-mono font-bold text-indigo-700" dir="ltr">{acc.code}</td>
+                            <td className="p-2 font-bold text-slate-900">{acc.name}</td>
+                            <td className="p-2 text-slate-600 text-[11px]">{getAccountTypeName(acc.type)}</td>
+                            <td className="p-2 text-slate-600">{acc.normal_balance === 'debit' ? 'مدين' : 'دائن'}</td>
+                            <td className="p-2 font-mono font-bold text-slate-900 text-left" dir="ltr">
+                              {Number(acc.current_balance || 0).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Signatures */}
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t-2 border-slate-900 text-center text-xs">
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">إعداد المحاسب القانوني</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">مراجعة رئيس الحسابات</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">اعتماد المدير العام والختم الرسمي</span>
+                    <div className="text-[11px] text-slate-400">............................................</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

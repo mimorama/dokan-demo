@@ -34,7 +34,8 @@ export default function UsersModal({ isOpen, onClose, currentUser }) {
     branch_id: '',
     warehouse_id: '',
     phone: '',
-    status: 'active'
+    status: 'active',
+    pin: ''
   });
 
   const roles = [
@@ -302,6 +303,22 @@ export default function UsersModal({ isOpen, onClose, currentUser }) {
                     dir="ltr"
                   />
                 </div>
+
+                {(formData.role === 'admin' || formData.role === 'manager') && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 sm:col-span-2">
+                    <label className="block text-amber-950 font-bold mb-1">الرمز السري لتفويض المدير (PIN) *</label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={8}
+                      placeholder="1234"
+                      value={formData.pin || ''}
+                      onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
+                      className="w-32 bg-white border border-amber-400 rounded-xl px-3 py-1.5 font-mono font-bold text-center text-amber-900"
+                      dir="ltr"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Role explanation alert */}

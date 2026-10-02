@@ -534,61 +534,114 @@ ${publicLink}
                 </div>
               </div>
 
-              {/* Sold Appliances Table */}
+              {/* Sold Appliances Table - Formatted specifically for A5 vs A4 */}
               <div className="mb-2.5">
-                <table className="w-full text-right border-collapse border border-slate-400 text-[11px]">
-                  <thead>
-                    <tr className="bg-slate-900 text-white font-bold">
-                      <th className="p-1.5 border border-slate-900 w-7 text-center">م</th>
-                      <th className="p-1.5 border border-slate-900">بيان الصنف والموديل</th>
-                      <th className="p-1.5 border border-slate-900 text-center w-36">الرقم التسلسلي (Serial No)</th>
-                      <th className="p-1.5 border border-slate-900 text-center w-40">الضمان والوكيل المعتمد</th>
-                      <th className="p-1.5 border border-slate-900 text-left w-24">السعر</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(!currentSale.items || currentSale.items.length === 0) ? (
-                      <tr>
-                        <td colSpan="5" className="p-3 text-center text-slate-500 font-bold border border-slate-300">
-                          {loadingSale ? 'جاري استدعاء تفاصيل الأجهزة والضمان...' : 'لا توجد أجهزة مسجلة في هذه الفاتورة'}
-                        </td>
+                {printFormat === 'a5' ? (
+                  /* Compact Tailored A5 Table (Requirement 2) */
+                  <table className="w-full text-right border-collapse border border-slate-400 text-[10px]">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-bold">
+                        <th className="p-1 border border-slate-900 w-6 text-center">م</th>
+                        <th className="p-1 border border-slate-900">بيان الصنف والموديل والرقم التسلسلي</th>
+                        <th className="p-1 border border-slate-900 text-center w-28">الضمان والوكيل</th>
+                        <th className="p-1 border border-slate-900 text-left w-20">السعر</th>
                       </tr>
-                    ) : (
-                      currentSale.items.map((item, index) => (
-                        <tr key={index} className="border-b border-slate-300 hover:bg-slate-50">
-                          <td className="p-1.5 border border-slate-300 text-center font-bold text-slate-500">{index + 1}</td>
-                          <td className="p-1.5 border border-slate-300">
-                            <p className="font-black text-slate-900 text-xs">{item.product_name || item.name || 'جهاز كهربائي'}</p>
-                            <div className="flex items-center gap-2 text-[9.5px] text-slate-500 mt-0.5">
-                              {item.model_number && <span className="font-mono">موديل: {item.model_number}</span>}
-                              {item.brand_name && <span>ماركة: {item.brand_name}</span>}
-                            </div>
-                            {item.specifications && (
-                              <p className="text-[9px] text-slate-400 line-clamp-1 mt-0.5">{item.specifications}</p>
-                            )}
-                          </td>
-                          <td className="p-1.5 border border-slate-300 text-center">
-                            <span className="font-mono font-bold bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-blue-900 text-[10px] inline-block" dir="ltr">
-                              {item.serial_number || 'غير مدون'}
-                            </span>
-                          </td>
-                          <td className="p-1.5 border border-slate-300 text-center">
-                            <div className="inline-flex items-center gap-1 font-bold text-emerald-800 text-[10px]">
-                              <ShieldCheck className="w-3 h-3 shrink-0" />
-                              <span>{item.warranty_months ? `ضمان ${item.warranty_months} شهر (${Math.round(item.warranty_months / 12)} سنة)` : 'ضمان معتمد'}</span>
-                            </div>
-                            {item.warranty_agency && (
-                              <p className="text-[9px] text-slate-500 mt-0.5">وكيل: {item.warranty_agency}</p>
-                            )}
-                          </td>
-                          <td className="p-1.5 border border-slate-300 font-black text-slate-900 text-left font-mono" dir="ltr">
-                            {Number(item.unit_price || 0).toLocaleString()} {currency}
+                    </thead>
+                    <tbody>
+                      {(!currentSale.items || currentSale.items.length === 0) ? (
+                        <tr>
+                          <td colSpan="4" className="p-2 text-center text-slate-500 font-bold border border-slate-300">
+                            {loadingSale ? 'جاري استدعاء تفاصيل الأجهزة والضمان...' : 'لا توجد أجهزة مسجلة في هذه الفاتورة'}
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        currentSale.items.map((item, index) => (
+                          <tr key={index} className="border-b border-slate-300 hover:bg-slate-50">
+                            <td className="p-1 border border-slate-300 text-center font-bold text-slate-500">{index + 1}</td>
+                            <td className="p-1 border border-slate-300">
+                              <p className="font-black text-slate-900 text-[10.5px] leading-tight">{item.product_name || item.name || 'جهاز كهربائي'}</p>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-slate-600 mt-0.5">
+                                {item.model_number && <span className="font-mono">موديل: {item.model_number}</span>}
+                                {item.brand_name && <span>ماركة: {item.brand_name}</span>}
+                                {item.serial_number && (
+                                  <span className="font-mono font-bold bg-slate-100 border border-slate-300 px-1 py-0.2 rounded text-blue-900" dir="ltr">
+                                    S/N: {item.serial_number}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-1 border border-slate-300 text-center">
+                              <span className="font-bold text-emerald-800 text-[9.5px] block">
+                                {item.warranty_months ? `ضمان ${item.warranty_months} شهر` : 'ضمان معتمد'}
+                              </span>
+                              {item.warranty_agency && (
+                                <span className="text-[8.5px] text-slate-500 block leading-tight">وكيل: {item.warranty_agency}</span>
+                              )}
+                            </td>
+                            <td className="p-1 border border-slate-300 font-black text-slate-900 text-left font-mono text-[10.5px]" dir="ltr">
+                              {Number(item.unit_price || 0).toLocaleString()} {currency}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* Standard A4 Table */
+                  <table className="w-full text-right border-collapse border border-slate-400 text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-bold">
+                        <th className="p-1.5 border border-slate-900 w-7 text-center">م</th>
+                        <th className="p-1.5 border border-slate-900">بيان الصنف والموديل</th>
+                        <th className="p-1.5 border border-slate-900 text-center w-36">الرقم التسلسلي (Serial No)</th>
+                        <th className="p-1.5 border border-slate-900 text-center w-40">الضمان والوكيل المعتمد</th>
+                        <th className="p-1.5 border border-slate-900 text-left w-24">السعر</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!currentSale.items || currentSale.items.length === 0) ? (
+                        <tr>
+                          <td colSpan="5" className="p-3 text-center text-slate-500 font-bold border border-slate-300">
+                            {loadingSale ? 'جاري استدعاء تفاصيل الأجهزة والضمان...' : 'لا توجد أجهزة مسجلة في هذه الفاتورة'}
+                          </td>
+                        </tr>
+                      ) : (
+                        currentSale.items.map((item, index) => (
+                          <tr key={index} className="border-b border-slate-300 hover:bg-slate-50">
+                            <td className="p-1.5 border border-slate-300 text-center font-bold text-slate-500">{index + 1}</td>
+                            <td className="p-1.5 border border-slate-300">
+                              <p className="font-black text-slate-900 text-xs">{item.product_name || item.name || 'جهاز كهربائي'}</p>
+                              <div className="flex items-center gap-2 text-[9.5px] text-slate-500 mt-0.5">
+                                {item.model_number && <span className="font-mono">موديل: {item.model_number}</span>}
+                                {item.brand_name && <span>ماركة: {item.brand_name}</span>}
+                              </div>
+                              {item.specifications && (
+                                <p className="text-[9px] text-slate-400 line-clamp-1 mt-0.5">{item.specifications}</p>
+                              )}
+                            </td>
+                            <td className="p-1.5 border border-slate-300 text-center">
+                              <span className="font-mono font-bold bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-blue-900 text-[10px] inline-block" dir="ltr">
+                                {item.serial_number || 'غير مدون'}
+                              </span>
+                            </td>
+                            <td className="p-1.5 border border-slate-300 text-center">
+                              <div className="inline-flex items-center gap-1 font-bold text-emerald-800 text-[10px]">
+                                <ShieldCheck className="w-3 h-3 shrink-0" />
+                                <span>{item.warranty_months ? `ضمان ${item.warranty_months} شهر (${Math.round(item.warranty_months / 12)} سنة)` : 'ضمان معتمد'}</span>
+                              </div>
+                              {item.warranty_agency && (
+                                <p className="text-[9px] text-slate-500 mt-0.5">وكيل: {item.warranty_agency}</p>
+                              )}
+                            </td>
+                            <td className="p-1.5 border border-slate-300 font-black text-slate-900 text-left font-mono" dir="ltr">
+                              {Number(item.unit_price || 0).toLocaleString()} {currency}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
               {/* Financial Totals & Installment Block (Side-by-Side to Save Vertical A4 Space) */}

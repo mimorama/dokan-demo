@@ -469,28 +469,15 @@ export default function Settings({ onSettingsUpdated }) {
             </div>
           </div>
 
-          {/* System Version & Deployment Info */}
+          {/* System Info Banner (Requirement 16: Removed LAN/Wi-Fi and Port 5959) */}
           <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 rounded-2xl border border-blue-800/40 p-5 text-white shadow-md">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-blue-600/30 border border-blue-400/30 flex items-center justify-center flex-shrink-0">
-                  <HardDrive className="w-6 h-6 text-blue-400" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-extrabold text-sm text-white">منظومة دكان عبد العزيز للأجهزة الكهربائية</h4>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[10px] font-mono text-emerald-300 font-bold">
-                      v3.1.0
-                    </span>
-                  </div>
-                  <p className="text-xs text-blue-200/80 mt-0.5">
-                    إصدار معتمد للتشغيل على السيرفر المحلي والشبكة الداخلية (LAN/Wi-Fi) والاستضافة السحابية
-                  </p>
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-blue-600/30 border border-blue-400/30 flex items-center justify-center flex-shrink-0">
+                <HardDrive className="w-6 h-6 text-blue-400" />
               </div>
-              <div className="flex items-center gap-2 text-xs font-mono bg-black/30 px-3 py-2 rounded-xl border border-white/10 text-slate-300">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
-                <span>المنفذ المحلي: 5959</span>
+              <div>
+                <h4 className="font-extrabold text-sm text-white">منظومة دكان عبد العزيز للأجهزة الكهربائية</h4>
+                <p className="text-xs text-blue-200/80 mt-0.5 font-medium">نظام إدارة المعارض، نقاط البيع، المستودعات والأقساط المتكامل</p>
               </div>
             </div>
           </div>

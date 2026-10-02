@@ -49,6 +49,7 @@ export default function Users({ currentUser, settings }) {
     warehouse_id: '',
     phone: '',
     status: 'active',
+    pin: '',
     permissions: []
   });
 
@@ -249,6 +250,7 @@ export default function Users({ currentUser, settings }) {
       warehouse_id: u.warehouse_id || '',
       phone: u.phone || '',
       status: u.status || 'active',
+      pin: u.pin || '',
       permissions: existingPerms
     });
     setShowAddForm(true);
@@ -547,6 +549,35 @@ export default function Users({ currentUser, settings }) {
                   <option value="suspended">موقوف / معطل (ممنوع من تسجيل الدخول)</option>
                 </select>
               </div>
+
+              {/* Personal Manager PIN Field (Requirement 17) */}
+              {(formData.role === 'admin' || formData.role === 'manager') && (
+                <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 sm:col-span-2 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <label className="block text-amber-950 font-black text-xs mb-1 flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4 text-amber-700" />
+                        <span>الرمز السري الشخصي لتفويض المدير (PIN) *</span>
+                      </label>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        يخصص هذا الرمز السري لهذا المدير حصراً لاعتماد الخصومات، المرتجعات، وإلغاء/تعديل أذونات التحويل بدقة دون مشاركة رمز عام
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        required
+                        maxLength={8}
+                        placeholder="1234"
+                        value={formData.pin || ''}
+                        onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
+                        className="w-36 bg-white border-2 border-amber-400 focus:border-amber-600 rounded-xl px-3 py-2 font-mono font-black text-base text-amber-950 text-center tracking-widest focus:outline-none shadow-inner"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Granular Permissions Section */}
@@ -716,15 +747,23 @@ export default function Users({ currentUser, settings }) {
                       </td>
 
                       <td className="p-3.5">
-                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black inline-block ${
-                          u.role === 'admin' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
-                          u.role === 'manager' ? 'bg-blue-100 text-blue-900 border border-blue-300' :
-                          u.role === 'cashier' ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' :
-                          u.role === 'storekeeper' ? 'bg-orange-100 text-orange-900 border border-orange-300' :
-                          'bg-purple-100 text-purple-900 border border-purple-300'
-                        }`}>
-                          {roleObj?.title || u.role}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black inline-block ${
+                            u.role === 'admin' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                            u.role === 'manager' ? 'bg-blue-100 text-blue-900 border border-blue-300' :
+                            u.role === 'cashier' ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' :
+                            u.role === 'storekeeper' ? 'bg-orange-100 text-orange-900 border border-orange-300' :
+                            'bg-purple-100 text-purple-900 border border-purple-300'
+                          }`}>
+                            {roleObj?.title || u.role}
+                          </span>
+                          {(u.role === 'admin' || u.role === 'manager') && (
+                            <span className="inline-flex items-center gap-1 text-[9.5px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded" title="رمز التفويض السري">
+                              <KeyRound className="w-2.5 h-2.5 text-amber-600" />
+                              <span>PIN: {u.pin || '1234'}</span>
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="p-3.5 font-bold text-slate-700">

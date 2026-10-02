@@ -48,6 +48,12 @@ export default function Sales({
   const [whatsAppPhone, setWhatsAppPhone] = useState('');
   const [copiedInvoiceNo, setCopiedInvoiceNo] = useState(null);
 
+  // Tabs & Returns State (Requirement 6)
+  const [activeTab, setActiveTab] = useState('invoices'); // 'invoices' or 'returns'
+  const [returnsList, setReturnsList] = useState([]);
+  const [returnsLoading, setReturnsLoading] = useState(false);
+  const [printableCreditNote, setPrintableCreditNote] = useState(null);
+
   const currency = settings?.currency || 'ج.م';
   const storeName = settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية';
 
@@ -55,6 +61,24 @@ export default function Sales({
     loadBranches();
     loadSales();
   }, [saleTypeFilter, branchFilter, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (activeTab === 'returns') {
+      loadReturns();
+    }
+  }, [activeTab]);
+
+  const loadReturns = async () => {
+    setReturnsLoading(true);
+    try {
+      const data = await api.getReturns();
+      setReturnsList(data || []);
+    } catch (err) {
+      console.error('Error loading returns:', err);
+    } finally {
+      setReturnsLoading(false);
+    }
+  };
 
   const loadBranches = async () => {
     try {
@@ -230,14 +254,49 @@ ${publicLink}
 
         <div className="flex items-center gap-2">
           <button
-            onClick={loadSales}
+            onClick={() => {
+              if (activeTab === 'invoices') loadSales();
+              else loadReturns();
+            }}
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>تحديث الفواتير</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${(loading || returnsLoading) ? 'animate-spin' : ''}`} />
+            <span>{activeTab === 'invoices' ? 'تحديث الفواتير' : 'تحديث المرتجعات'}</span>
           </button>
         </div>
       </div>
+
+      {/* Tabs Navigation (Requirement 6) */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('invoices')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-black text-xs transition-all cursor-pointer ${
+            activeTab === 'invoices'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <ShoppingBag className="w-4 h-4" />
+          <span>سجل وتدقيق فواتير البيع ({sales.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('returns')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-black text-xs transition-all cursor-pointer ${
+            activeTab === 'returns'
+              ? 'bg-rose-600 text-white shadow-md'
+              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4" />
+          <span>سجل المرتجعات والإشعارات الدائنة ({returnsList.length})</span>
+        </button>
+      </div>
+
+      {activeTab === 'invoices' && (
+        <div className="space-y-6">
 
       {/* KPI Stats Overview Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
@@ -510,17 +569,6 @@ ${publicLink}
                           <span>طباعة</span>
                         </button>
 
-                        {/* View Invoice in New Window */}
-                        <a
-                          href={`/api/invoices/public/${sale.invoice_no}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="عرض الفاتورة في شاشة جديدة والطباعة منها"
-                          className="p-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>عرض الفاتورة</span>
-                        </a>
 
                         {/* WhatsApp Resend */}
                         <button
@@ -558,6 +606,333 @@ ${publicLink}
           </table>
         </div>
       </div>
+    </div>
+    )}
+
+      {/* Returns Tab Content (Requirement 6) */}
+      {activeTab === 'returns' && (
+        <div className="space-y-6">
+          {/* Returns KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-500 block">إجمالي إشعارات المرتجع</span>
+              <div className="text-2xl font-black text-rose-700 mt-1 font-mono">
+                {returnsList.length.toLocaleString()} <span className="text-xs text-slate-500 font-bold">عملية</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-500 block">إجمالي مبالغ المرتجعات المستردة</span>
+              <div className="text-2xl font-black text-rose-800 mt-1 font-mono" dir="ltr">
+                {returnsList.reduce((sum, r) => sum + (Number(r.refund_amount) || 0), 0).toLocaleString()} <span className="text-xs text-slate-500 font-bold">{currency}</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-500 block">إجمالي الأجهزة المرتجعة للمخازن</span>
+              <div className="text-2xl font-black text-indigo-900 mt-1 font-mono">
+                {returnsList.reduce((sum, r) => sum + (r.items ? r.items.length : 0), 0).toLocaleString()} <span className="text-xs text-slate-500 font-bold">جهاز</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Returns Table */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-rose-600" />
+                <h3 className="font-extrabold text-sm text-slate-800">سجل الإشعارات الدائنة ومرتجع المبيعات (Sales Returns)</h3>
+              </div>
+              <span className="text-xs text-slate-500 font-bold">
+                مرتبط آلياً بحركة المخزون والخزينة وأرصدة العملاء
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-700 font-extrabold">
+                  <tr>
+                    <th className="py-3 px-3 text-center">#</th>
+                    <th className="py-3 px-3">رقم الإشعار</th>
+                    <th className="py-3 px-3">تاريخ المرتجع</th>
+                    <th className="py-3 px-3">الفاتورة الأصلية</th>
+                    <th className="py-3 px-3">العميل</th>
+                    <th className="py-3 px-3">الأجهزة المرتجعة والسيريال</th>
+                    <th className="py-3 px-3 text-center">طريقة الاسترداد</th>
+                    <th className="py-3 px-3 text-left">مبلغ المرتجع</th>
+                    <th className="py-3 px-3 text-center">إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {returnsList.length > 0 ? (
+                    returnsList.map((ret, idx) => (
+                      <tr key={ret.id || idx} className="hover:bg-slate-50/70 transition">
+                        <td className="py-3 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
+                        <td className="py-3 px-3">
+                          <span className="font-mono font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-lg text-[11px]" dir="ltr">
+                            RET-{ret.id}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-slate-600 text-[11px]" dir="ltr">
+                          {ret.return_date ? String(ret.return_date).slice(0, 16).replace('T', ' ') : '-'}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px]" dir="ltr">
+                            {ret.sale_invoice_no}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-slate-900">{ret.customer_name || 'عميل نقدي'}</div>
+                          {ret.customer_phone && (
+                            <div className="text-[10px] text-slate-500 font-mono" dir="ltr">{ret.customer_phone}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="space-y-1">
+                            {ret.items?.map((item, itemIdx) => (
+                              <div key={itemIdx} className="flex items-center gap-1.5 text-[11px]">
+                                <span className="font-bold text-slate-800">{item.product_name}</span>
+                                {item.serial_number && (
+                                  <span className="font-mono text-[10px] bg-slate-100 px-1 rounded text-slate-600">
+                                    SN: {item.serial_number}
+                                  </span>
+                                )}
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                  item.restock_status === 'in_stock' ? 'bg-emerald-100 text-emerald-800' :
+                                  item.restock_status === 'outlet' ? 'bg-amber-100 text-amber-800' :
+                                  'bg-rose-100 text-rose-800'
+                                }`}>
+                                  {item.restock_status === 'in_stock' ? 'مخزن سليم' :
+                                   item.restock_status === 'outlet' ? 'أوتلت مخفض' : 'تالف / خردة'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            ret.refund_method === 'cash' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {ret.refund_method === 'cash' ? 'نقدي من الخزينة' : 'رصيد دائن بحساب العميل'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-black text-rose-700 text-left text-xs" dir="ltr">
+                          {Number(ret.refund_amount || 0).toLocaleString()} {currency}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setPrintableCreditNote(ret)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] shadow-2xs cursor-pointer transition active:scale-98"
+                            title="طباعة إشعار دائن رسمي A4"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>إشعار دائن (A4)</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="9" className="py-12 text-center text-slate-400">
+                        {returnsLoading ? 'جاري تحميل المرتجعات...' : 'لا توجد عمليات مرتجع مسجلة'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Printable Credit Note Modal (Requirement 6) */}
+      {printableCreditNote && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          {/* Isolated Print Styles */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 8mm 10mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #credit-note-printable-area,
+              #credit-note-printable-area * {
+                visibility: visible !important;
+              }
+              #credit-note-printable-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3 no-print">
+              <div className="flex items-center gap-2.5">
+                <RotateCcw className="w-5 h-5 text-rose-600" />
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-sm">إشعار دائن مرتجع مبيعات معتمد (Credit Note)</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">رقم الإشعار: RET-{printableCreditNote.id}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-98"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة الإشعار (A4)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintableCreditNote(null)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content */}
+            <div className="p-6 overflow-y-auto" dir="rtl">
+              <div id="credit-note-printable-area" className="border-2 border-slate-900 rounded-2xl p-6 bg-white space-y-4 text-xs">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3">
+                  <div className="flex items-center gap-3">
+                    {settings?.logo_url && (
+                      <img src={settings.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+                    )}
+                    <div>
+                      <h2 className="text-base font-black text-slate-900">{storeName}</h2>
+                      <p className="text-[11px] text-slate-600">قسم المبيعات وخدمة العملاء والمرتجعات (RMA)</p>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono text-xs space-y-0.5" dir="ltr">
+                    <div className="font-black text-rose-700">SALES CREDIT NOTE</div>
+                    <div className="text-slate-800 font-bold">No: RET-{printableCreditNote.id}</div>
+                    <div className="text-slate-600">Date: {printableCreditNote.return_date ? String(printableCreditNote.return_date).slice(0, 10) : ''}</div>
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="text-center py-1.5 bg-rose-50 rounded-xl border border-rose-200">
+                  <span className="font-black text-sm text-rose-950 tracking-wide">
+                    إشعار دائن مرتجع مبيعات معتمد (CREDIT NOTE)
+                  </span>
+                </div>
+
+                {/* Details Grid */}
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                  <div>
+                    <span className="text-slate-500 font-bold block text-[11px]">بيانات العميل:</span>
+                    <span className="font-extrabold text-slate-900 text-sm">{printableCreditNote.customer_name || 'عميل نقدي'}</span>
+                    {printableCreditNote.customer_phone && (
+                      <span className="block text-[11px] font-mono text-slate-600" dir="ltr">{printableCreditNote.customer_phone}</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block text-[11px]">الفاتورة المرجعية الأصلية:</span>
+                    <span className="font-mono font-black text-blue-800 text-sm" dir="ltr">{printableCreditNote.sale_invoice_no}</span>
+                    <span className="block text-[11px] text-slate-500">سبب الإرجاع: {printableCreditNote.reason || 'رغبة العميل'}</span>
+                  </div>
+                </div>
+
+                {/* Returned Items Table */}
+                <div className="border border-slate-300 rounded-xl overflow-hidden">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-800 text-white font-bold">
+                      <tr>
+                        <th className="p-2 text-center w-8">#</th>
+                        <th className="p-2">اسم الصنف والموديل</th>
+                        <th className="p-2 w-36">السيريال المسجل</th>
+                        <th className="p-2 w-32 text-center">حالة إعادة التخزين</th>
+                        <th className="p-2 w-28 text-left">مبلغ الاسترداد</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {printableCreditNote.items?.map((item, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                          <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                          <td className="p-2 font-bold text-slate-900">
+                            {item.product_name} {item.model_number && `(${item.model_number})`}
+                          </td>
+                          <td className="p-2 font-mono font-bold text-slate-700 text-[11px]" dir="ltr">
+                            {item.serial_number || '—'}
+                          </td>
+                          <td className="p-2 text-center">
+                            <span className="font-semibold text-[11px]">
+                              {item.restock_status === 'in_stock' ? 'مخزون جديد سليم' :
+                               item.restock_status === 'outlet' ? 'أوتلت مخفض' : 'تالف / خردة'}
+                            </span>
+                          </td>
+                          <td className="p-2 font-mono font-bold text-rose-700 text-left" dir="ltr">
+                            {Number(item.refund_price || 0).toLocaleString()} {currency}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-rose-50/80 border-t-2 border-rose-300 font-black text-xs">
+                      <tr>
+                        <td colSpan="4" className="p-2.5 text-slate-900">
+                          إجمالي قيمة الإشعار الدائن المسترد للعميل:
+                          <span className="text-[11px] font-bold text-slate-600 mr-2">
+                            ({printableCreditNote.refund_method === 'cash' ? 'تم الصرف نقداً من خزينة المعرض' : 'تم إضافة المبلغ كرصيد دائن متاح بحساب العميل'})
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-left font-mono text-rose-900 text-sm" dir="ltr">
+                          {Number(printableCreditNote.refund_amount || 0).toLocaleString()} {currency}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Signatures */}
+                <div className="grid grid-cols-4 gap-2 pt-4 border-t-2 border-slate-900 text-center text-xs">
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">توقيع العميل المستلم</span>
+                    <div className="text-[11px] text-slate-400">..............................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">مسؤول استلام المخزن</span>
+                    <div className="text-[11px] text-slate-400">..............................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">أمين الخزينة / الحسابات</span>
+                    <div className="text-[11px] text-slate-400">..............................</div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold text-slate-700 block">اعتماد الإدارة والختم</span>
+                    <div className="text-[11px] text-slate-400">..............................</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* WhatsApp Custom Phone Modal */}
       {whatsAppModalSale && (

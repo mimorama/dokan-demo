@@ -539,6 +539,17 @@ function initDb() {
   try { db.exec("ALTER TABLE sales ADD COLUMN paid_by_customer_credit REAL DEFAULT 0"); } catch (_) {}
   try { db.exec("ALTER TABLE finance_companies ADD COLUMN company_type TEXT DEFAULT 'finance_company'"); } catch (_) {}
 
+  // Safe migrations for Individual Manager PIN (Requirement 17)
+  try { db.exec("ALTER TABLE users ADD COLUMN pin TEXT"); } catch (_) {}
+  try { db.prepare("UPDATE users SET pin = '1234' WHERE (pin IS NULL OR pin = '') AND role IN ('admin', 'manager')").run(); } catch (_) {}
+
+  // Safe migrations for Supplier Payments Checks & Handover (Requirement 14)
+  try { db.exec("ALTER TABLE supplier_payments ADD COLUMN check_number TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE supplier_payments ADD COLUMN check_due_date DATE"); } catch (_) {}
+  try { db.exec("ALTER TABLE supplier_payments ADD COLUMN bank_name TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE supplier_payments ADD COLUMN recipient_name TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE supplier_payments ADD COLUMN recipient_national_id TEXT"); } catch (_) {}
+
   // Auto-categorize banks vs finance companies
   try {
     db.prepare(`

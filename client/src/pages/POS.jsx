@@ -407,6 +407,11 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
         : item.product.cash_price
     })));
 
+    if (type !== 'cash') {
+      setUseCustomerCredit(false);
+      setPaidFromCredit(0);
+    }
+
     if (type === 'bank') {
       const bList = financeCompanies.filter(c => c.company_type === 'bank' || c.name.includes('بنك') || c.name.includes('أهلي') || c.name.includes('مصر') || c.name.includes('CIB') || c.name.includes('QNB'));
       if (bList.length > 0) {
@@ -616,16 +621,33 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
     executeSaleSubmission();
   };
 
-  const handleConfirmManagerPin = (e) => {
+  const handleConfirmManagerPin = async (e) => {
     e?.preventDefault();
-    const correctPin = String(settings?.manager_override_pin || '1234');
-    if (pinInput.trim() !== correctPin) {
-      alert('رمز تفويض المدير غير صحيح!');
+    if (!pinInput.trim()) {
+      alert('يرجى إدخال الرمز السري لتفويض المدير');
       return;
     }
-    setShowPinModal(false);
-    setPinInput('');
-    executeSaleSubmission();
+
+    try {
+      const res = await api.verifyPin(pinInput.trim());
+      if (res && res.valid) {
+        setShowPinModal(false);
+        setPinInput('');
+        executeSaleSubmission();
+      } else {
+        alert('رمز تفويض المدير غير صحيح!');
+      }
+    } catch (err) {
+      // Fallback check against settings if needed
+      const correctPin = String(settings?.manager_override_pin || '1234');
+      if (pinInput.trim() === correctPin) {
+        setShowPinModal(false);
+        setPinInput('');
+        executeSaleSubmission();
+      } else {
+        alert(err.message || 'رمز تفويض المدير غير صحيح!');
+      }
+    }
   };
 
   const handleSaveCustomerEdit = async (e) => {
@@ -1433,8 +1455,8 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
                 </div>
               </div>
 
-              {/* Customer Balance Credit Card (Requirement 4) */}
-              {selectedCustomerObj && Number(selectedCustomerObj.balance) > 0 && (
+              {/* Customer Balance Credit Card (Requirement 9: Only in Instant Cash Sale) */}
+              {saleType === 'cash' && selectedCustomerObj && Number(selectedCustomerObj.balance) > 0 && (
                 <div className="bg-emerald-50/90 border border-emerald-300 rounded-xl p-3 text-xs space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 font-black text-emerald-950">
