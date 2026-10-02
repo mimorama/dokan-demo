@@ -12,9 +12,32 @@ import {
   Warehouse, 
   Building2, 
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { api } from '../api';
+
+const playChimeSound = () => {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (e) {
+    // Audio context prevented before user interaction
+  }
+};
 
 export default function NotificationCenter({ 
   currentUser, 
@@ -26,6 +49,11 @@ export default function NotificationCenter({
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [filterType, setFilterType] = useState('all'); // 'all', 'stock_transfer', 'stock_request', 'unread'
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    return localStorage.getItem('dokan_notif_sound') !== 'false';
+  });
+  const [recentToast, setRecentToast] = useState(null);
+  const previousUnreadRef = useRef(0);
   const dropdownRef = useRef(null);
 
   const fetchNotifications = async () => {
@@ -33,8 +61,22 @@ export default function NotificationCenter({
       const branchId = currentUser?.branch_id || '';
       const res = await api.getNotifications(branchId ? `branch_id=${branchId}` : '');
       if (res) {
-        setNotifications(res.notifications || []);
-        setUnreadCount(res.unreadCount || 0);
+        const notifs = res.notifications || [];
+        const newUnread = res.unreadCount || 0;
+        
+        if (newUnread > previousUnreadRef.current && previousUnreadRef.current !== 0) {
+          if (soundEnabled) {
+            playChimeSound();
+          }
+          const latest = notifs.find(n => !n.is_read) || notifs[0];
+          if (latest) {
+            setRecentToast(latest);
+            setTimeout(() => setRecentToast(null), 6000);
+          }
+        }
+        previousUnreadRef.current = newUnread;
+        setNotifications(notifs);
+        setUnreadCount(newUnread);
       }
     } catch (err) {
       console.error('Failed to load notifications:', err);
@@ -190,6 +232,21 @@ export default function NotificationCenter({
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !soundEnabled;
+                  setSoundEnabled(next);
+                  localStorage.setItem('dokan_notif_sound', next ? 'true' : 'false');
+                  if (next) playChimeSound();
+                }}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  soundEnabled ? 'text-amber-400 hover:text-amber-300 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-400 hover:bg-slate-800'
+                }`}
+                title={soundEnabled ? 'صوت التنبيهات مفعّل (انقر للكتم)' : 'صوت التنبيهات مكتوم (انقر للتفعيل)'}
+              >
+                {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+              </button>
               <button
                 type="button"
                 onClick={fetchNotifications}
@@ -386,6 +443,36 @@ export default function NotificationCenter({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Floating Toast Notification (Requirement 10) */}
+      {recentToast && (
+        <div className="fixed bottom-5 left-5 z-50 bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border border-blue-500/50 flex items-center gap-3 animate-in slide-in-from-bottom duration-200 max-w-sm">
+          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+            <Bell className="w-5 h-5 animate-bounce" />
+          </div>
+          <div className="flex-1 min-w-0 text-right">
+            <p className="font-extrabold text-xs text-white truncate">{recentToast.title}</p>
+            <p className="text-[11px] text-slate-300 truncate">{recentToast.message}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              handleNotificationClick(recentToast);
+              setRecentToast(null);
+            }}
+            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] whitespace-nowrap cursor-pointer shadow-xs"
+          >
+            عرض
+          </button>
+          <button
+            type="button"
+            onClick={() => setRecentToast(null)}
+            className="text-slate-400 hover:text-white p-1 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

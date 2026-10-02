@@ -6,7 +6,6 @@ import {
   Building2, 
   ArrowRightLeft, 
   TrendingUp, 
-  TrendingDown, 
   Printer, 
   CheckCircle2, 
   AlertCircle, 
@@ -14,8 +13,11 @@ import {
   FileText, 
   Coins, 
   ShieldCheck, 
-  Store, 
-  ChevronDown,
+  Truck,
+  RotateCcw,
+  Percent,
+  Smartphone,
+  Send,
   X
 } from 'lucide-react';
 import { api } from '../api';
@@ -34,7 +36,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
   const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Active channel subtab
-  const [activeChannelTab, setActiveChannelTab] = useState('all'); // 'all', 'cash', 'finance', 'cards', 'transfers', 'installments'
+  const [activeChannelTab, setActiveChannelTab] = useState('all');
 
   const currency = settings?.currency || 'ج.م';
   const storeName = settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية';
@@ -73,17 +75,24 @@ export default function DailyReconciliation({ settings, currentUser }) {
   };
 
   const summary = reconciliationData?.summary || {};
-  const cashMetrics = summary?.cash || {};
+  const cashMetrics = summary?.cash_drawer || summary?.cash || {};
+  const visaMetrics = summary?.visa || {};
+  const instapayMetrics = summary?.instapay || {};
+  const walletMetrics = summary?.wallet || {};
   const cardMetrics = summary?.cards || {};
   const financeMetrics = summary?.finance_companies || {};
+  const bankMetrics = summary?.banks || {};
   const transferMetrics = summary?.transfers || {};
   const installmentMetrics = summary?.installments || {};
+  const returnMetrics = summary?.returns || {};
+  const supplierPayMetrics = summary?.supplier_payments || {};
+  const customerCreditMetrics = summary?.customer_credit || {};
   const itemized = reconciliationData?.itemized || {};
 
   // Expected Cash calculation
   const expectedCash = cashMetrics?.net_cash_drawer_flow || 0;
   const countedNum = actualCashCounted !== '' ? Number(actualCashCounted) : null;
-  const cashDifference = countedNum !== null ? countedNum - expectedCash : null;
+  const cashDifference = countedNum !== null ? Math.round((countedNum - expectedCash) * 100) / 100 : null;
 
   const handlePrintOfficialSheet = () => {
     setShowPrintModal(true);
@@ -101,7 +110,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
             <span>مراجعة اليومية وتدقيق طرق الدفع (تقفيل الخزينة)</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            مطابقة جميع مقبوضات اليوم عبر قنوات الدفع (نقدي، فيزا POS، شركات تمويل فاليو وكونتاكت، انستاباي، وأقساط)
+            تدقيق محاسبي شامل ومطابقة دقيقة لجميع قنوات التحصيل (نقدي، فيزا POS 2%، انستاباي، محافظ 1%، شركات التمويل، البنوك، والأقساط)
           </p>
         </div>
 
@@ -129,13 +138,21 @@ export default function DailyReconciliation({ settings, currentUser }) {
           <select
             value={selectedBranch}
             onChange={(e) => setSelectedBranch(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
           >
             <option value="">جميع الفروع</option>
             {branches.map(b => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>
+
+          <button
+            onClick={loadReconciliation}
+            title="تحديث البيانات"
+            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
 
           <button
             onClick={handlePrintOfficialSheet}
@@ -149,74 +166,79 @@ export default function DailyReconciliation({ settings, currentUser }) {
 
       {/* Main KPI Summary Channels Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {/* 1. Cash Inflow */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+        {/* 1. Pure Cash Drawer Net Flow */}
+        <div className="bg-white p-4 rounded-2xl border border-emerald-200/80 shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold">1. النقدية بالدرج</span>
+            <span className="text-[11px] font-bold">1. صافي الدرج النقدي</span>
             <Wallet className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-xl font-black text-emerald-700 font-mono" dir="ltr">
-            {(cashMetrics.total_cash_in || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
+            {(cashMetrics.net_cash_drawer_flow || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
           </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            صرف: {(cashMetrics.total_cash_out || 0).toLocaleString()} {currency}
-          </span>
+          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-100 font-mono">
+            <span className="text-emerald-600 font-bold">وارد: +{(cashMetrics.total_cash_in || 0).toLocaleString()}</span>
+            <span className="text-rose-600 font-bold">صرف: -{(cashMetrics.total_cash_out || 0).toLocaleString()}</span>
+          </div>
         </div>
 
-        {/* 2. POS Cards */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+        {/* 2. Visa POS (2% fee deducted) */}
+        <div className="bg-white p-4 rounded-2xl border border-blue-200/80 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold">2. ماكينات الفيزا</span>
+            <span className="text-[11px] font-bold">2. ماكينات الفيزا (2%)</span>
             <CreditCard className="w-4 h-4 text-blue-600" />
           </div>
           <div className="text-xl font-black text-blue-700 font-mono" dir="ltr">
-            {(cardMetrics.total_amount || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
+            {(visaMetrics.gross || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
           </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            {cardMetrics.count || 0} عملية سحب
-          </span>
+          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-100">
+            <span className="text-rose-600 font-mono">عمولة: -{(visaMetrics.fees || 0).toLocaleString()}</span>
+            <span className="text-blue-700 font-bold font-mono">صافي: {(visaMetrics.net || 0).toLocaleString()}</span>
+          </div>
         </div>
 
-        {/* 3. Consumer Finance */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+        {/* 3. InstaPay (1 EGP / 1000 EGP fee deducted) */}
+        <div className="bg-white p-4 rounded-2xl border border-purple-200/80 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold">3. شركات التمويل</span>
+            <span className="text-[11px] font-bold">3. إنستاباي InstaPay</span>
+            <Send className="w-4 h-4 text-purple-600" />
+          </div>
+          <div className="text-xl font-black text-purple-700 font-mono" dir="ltr">
+            {(instapayMetrics.gross || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
+          </div>
+          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-100">
+            <span className="text-rose-600 font-mono">رسوم: -{(instapayMetrics.fees || 0).toLocaleString()}</span>
+            <span className="text-purple-700 font-bold font-mono">صافي: {(instapayMetrics.net || 0).toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* 4. Electronic Wallets (1% fee deducted) */}
+        <div className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold">4. محافظ إلكترونية (1%)</span>
+            <Smartphone className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="text-xl font-black text-amber-700 font-mono" dir="ltr">
+            {(walletMetrics.gross || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
+          </div>
+          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-100">
+            <span className="text-rose-600 font-mono">رسوم: -{(walletMetrics.fees || 0).toLocaleString()}</span>
+            <span className="text-amber-700 font-bold font-mono">صافي: {(walletMetrics.net || 0).toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* 5. Banks & Consumer Finance */}
+        <div className="bg-white p-4 rounded-2xl border border-indigo-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold">5. تمويل و بنوك</span>
             <Building2 className="w-4 h-4 text-indigo-600" />
           </div>
           <div className="text-xl font-black text-indigo-700 font-mono" dir="ltr">
-            {(financeMetrics.gross_amount || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
+            {((financeMetrics.gross || 0) + (bankMetrics.gross || 0)).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
           </div>
-          <span className="text-[10px] text-indigo-600 font-bold block mt-0.5">
-            صافي: {(financeMetrics.net_store_payout || 0).toLocaleString()} {currency}
-          </span>
-        </div>
-
-        {/* 4. Bank / InstaPay */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold">4. تحويل / انستاباي</span>
-            <ArrowRightLeft className="w-4 h-4 text-purple-600" />
+          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-100">
+            <span className="text-indigo-600 font-bold font-mono">شركات: {(financeMetrics.count || 0)}</span>
+            <span className="text-indigo-900 font-bold font-mono">صافي: {((financeMetrics.net || 0) + (bankMetrics.net || 0)).toLocaleString()}</span>
           </div>
-          <div className="text-xl font-black text-purple-700 font-mono" dir="ltr">
-            {(transferMetrics.total_amount || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
-          </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            {transferMetrics.count || 0} عملية تحويل
-          </span>
-        </div>
-
-        {/* 5. Installments Collected */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold">5. أقساط محصلة</span>
-            <TrendingUp className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-xl font-black text-amber-700 font-mono" dir="ltr">
-            {(installmentMetrics.total || 0).toLocaleString()} <span className="text-[10px] font-bold text-slate-500">{currency}</span>
-          </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            {installmentMetrics.count || 0} قسط اليوم
-          </span>
         </div>
 
         {/* 6. Total Gross Sales & Turnover */}
@@ -225,13 +247,14 @@ export default function DailyReconciliation({ settings, currentUser }) {
           <div className="text-xl font-black text-white font-mono" dir="ltr">
             {(summary.total_gross_revenue || 0).toLocaleString()} <span className="text-[10px] font-bold text-blue-200">{currency}</span>
           </div>
-          <span className="text-[10px] text-slate-300 block mt-0.5">
-            {summary.total_invoices_count || 0} فاتورة بيع
-          </span>
+          <div className="flex justify-between items-center text-[10px] text-slate-300 mt-1 pt-1 border-t border-white/10 font-mono">
+            <span>{summary.total_invoices_count || 0} فاتورة</span>
+            <span>{installmentMetrics.count || 0} قسط</span>
+          </div>
         </div>
       </div>
 
-      {/* Cash Drawer Reconciliation Box (عجز / زيادة الخزينة) */}
+      {/* Cash Drawer Reconciliation Box (مطابقة الدرج والعجز والزيادة) */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
           <div>
@@ -240,7 +263,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
               <h3 className="font-extrabold text-base text-white">مطابقة النقدية بالدرج والعهدة اليومية (Drawer Reconciliation)</h3>
             </div>
             <p className="text-xs text-blue-200 mt-0.5">
-              مقارنة النقدية المسجلة محاسبياً بالنظام مع النقدية الفعلية بعد جرد الدرج لتحديد العجز أو الزيادة
+              مقارنة النقدية المسجلة محاسبياً بالنظام مع النقدية الفعلية بعد جرد الدرج لتحديد العجز أو الزيادة بدقة
             </p>
           </div>
 
@@ -318,18 +341,21 @@ export default function DailyReconciliation({ settings, currentUser }) {
         {/* Navigation Tabs */}
         <div className="p-3 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-2">
           {[
-            { id: 'all', label: 'جميع فواتير اليوم', count: summary.total_invoices_count || 0 },
-            { id: 'finance', label: 'شركات التمويل (فاليو / كونتاكت)', count: financeMetrics.count || 0, badge: 'مهم' },
-            { id: 'cash', label: 'المبيعات النقدية', count: itemized.cashSales?.length || 0 },
-            { id: 'cards', label: 'ماكينات الفيزا POS', count: cardMetrics.count || 0 },
-            { id: 'transfers', label: 'التحويلات البنكية وانستاباي', count: transferMetrics.count || 0 },
-            { id: 'installments', label: 'تحصيلات الأقساط', count: installmentMetrics.count || 0 },
-            { id: 'expenses', label: 'مصروفات الخزينة اليوم', count: itemized.cashExpenses?.length || 0 }
+            { id: 'all', label: 'جميع المعاملات', count: summary.total_invoices_count || 0 },
+            { id: 'drawer', label: 'حركة الدرج النقدي', count: (itemized.pureCashSales?.length || 0) + (itemized.installmentPayments?.filter(p => !p.payment_method || p.payment_method === 'cash').length || 0) },
+            { id: 'visa', label: 'فيزا POS (2%)', count: itemized.visaSales?.length || 0 },
+            { id: 'instapay', label: 'إنستاباي (1ج/1000ج)', count: itemized.instapaySales?.length || 0 },
+            { id: 'wallet', label: 'محافظ إلكترونية (1%)', count: itemized.walletSales?.length || 0 },
+            { id: 'finance', label: 'شركات التمويل والبنوك', count: (itemized.financeCompanySales?.length || 0) + (itemized.bankSales?.length || 0) },
+            { id: 'installments', label: 'تحصيلات الأقساط', count: itemized.installmentPayments?.length || 0 },
+            { id: 'suppliers', label: 'سداد الموردين', count: itemized.supplierPaymentsList?.length || 0 },
+            { id: 'returns', label: 'المرتجعات والاسترداد', count: itemized.returnsList?.length || 0 },
+            { id: 'expenses', label: 'المصروفات النثرية', count: itemized.cashExpenses?.length || 0 }
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveChannelTab(tab.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeChannelTab === tab.id
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
@@ -341,23 +367,18 @@ export default function DailyReconciliation({ settings, currentUser }) {
               }`}>
                 {tab.count}
               </span>
-              {tab.badge && (
-                <span className="text-[9px] bg-amber-400 text-slate-950 font-black px-1 rounded">
-                  {tab.badge}
-                </span>
-              )}
             </button>
           ))}
         </div>
 
         {/* Content based on Active Channel */}
         <div className="p-5">
-          {/* TAB 1: CONSUMER FINANCE BREAKDOWN (VALU, CONTACT, SOUHOOLA...) */}
+          {/* TAB: FINANCE & BANKS BREAKDOWN */}
           {activeChannelTab === 'finance' && (
             <div className="space-y-6">
               <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h4 className="font-black text-sm text-indigo-950">تفصيل عمولات ومستحقات شركات التمويل الاستهلاكي</h4>
+                  <h4 className="font-black text-sm text-indigo-950">تفصيل عمولات ومستحقات شركات التمويل الاستهلاكي والبنوك</h4>
                   <p className="text-xs text-indigo-700 mt-0.5">
                     العمولة المقتطعة تخصم من مستحقات المعرض ويتم إيداع الصافي في حساب المعرض البنكي
                   </p>
@@ -365,15 +386,15 @@ export default function DailyReconciliation({ settings, currentUser }) {
                 <div className="flex items-center gap-4 text-xs font-bold">
                   <div>
                     <span className="text-slate-500 block text-[11px]">إجمالي الموافقات:</span>
-                    <span className="font-mono text-slate-900 font-black text-sm">{financeMetrics.gross_amount?.toLocaleString()} {currency}</span>
+                    <span className="font-mono text-slate-900 font-black text-sm">{financeMetrics.gross?.toLocaleString()} {currency}</span>
                   </div>
                   <div>
                     <span className="text-rose-600 block text-[11px]">عمولات التاجر:</span>
-                    <span className="font-mono text-rose-700 font-black text-sm">-{financeMetrics.total_merchant_fees?.toLocaleString()} {currency}</span>
+                    <span className="font-mono text-rose-700 font-black text-sm">-{financeMetrics.fees?.toLocaleString()} {currency}</span>
                   </div>
                   <div>
                     <span className="text-emerald-700 block text-[11px]">صافي المستحق للمعرض:</span>
-                    <span className="font-mono text-emerald-800 font-black text-sm">{financeMetrics.net_store_payout?.toLocaleString()} {currency}</span>
+                    <span className="font-mono text-emerald-800 font-black text-sm">{financeMetrics.net?.toLocaleString()} {currency}</span>
                   </div>
                 </div>
               </div>
@@ -414,23 +435,295 @@ export default function DailyReconciliation({ settings, currentUser }) {
                     <tr>
                       <th className="py-3 px-4">رقم الفاتورة</th>
                       <th className="py-3 px-4">اسم العميل</th>
-                      <th className="py-3 px-4">الشركة الممولة</th>
-                      <th className="py-3 px-4">كود العملية / الموافقة</th>
+                      <th className="py-3 px-4">الجهة الممولة</th>
+                      <th className="py-3 px-4">كود الموافقة</th>
                       <th className="py-3 px-4">المبلغ الإجمالي</th>
                       <th className="py-3 px-4">عمولة التاجر</th>
                       <th className="py-3 px-4">صافي المعرض</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {itemized.financeSales?.map(s => (
+                    {itemized.financeCompanySales?.concat(itemized.bankSales || [])?.map(s => (
                       <tr key={s.id} className="hover:bg-slate-50">
                         <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
-                        <td className="py-3 px-4 font-bold text-slate-800">{s.customer_name || 'عميل نقدي'}</td>
-                        <td className="py-3 px-4 font-bold text-indigo-700">{s.finance_company_name || 'تقسيط'}</td>
+                        <td className="py-3 px-4 font-bold text-slate-800">{s.customer_name || 'عميل'}</td>
+                        <td className="py-3 px-4 font-bold text-indigo-700">{s.finance_company_name || s.partner_company_name || 'تقسيط'}</td>
                         <td className="py-3 px-4 font-mono text-slate-600" dir="ltr">{s.finance_approval_code || '---'}</td>
                         <td className="py-3 px-4 font-black font-mono text-slate-900" dir="ltr">{Number(s.total).toLocaleString()} {currency}</td>
-                        <td className="py-3 px-4 font-mono text-rose-600 font-bold" dir="ltr">-{Number(s.merchant_fee).toLocaleString()} {currency}</td>
-                        <td className="py-3 px-4 font-black font-mono text-emerald-700" dir="ltr">{Number(s.net_payout).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-mono text-rose-600 font-bold" dir="ltr">-{Number(s.merchant_fee || 0).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-black font-mono text-emerald-700" dir="ltr">{Number(s.net_payout || (Number(s.total) - Number(s.merchant_fee || 0))).toLocaleString()} {currency}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: DRAWER FLOW (وارد / منصرف) */}
+          {activeChannelTab === 'drawer' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4">
+                  <h4 className="font-extrabold text-sm text-emerald-900 mb-2 flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                    <span>مقبوضات وارد الدرج النقدي اليوم (+{(cashMetrics.total_cash_in || 0).toLocaleString()} {currency})</span>
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-emerald-100">
+                      <span>مبيعات الصالة النقدية:</span>
+                      <strong className="font-mono text-emerald-800">{(cashMetrics.pure_cash_sales || 0).toLocaleString()} {currency}</strong>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-emerald-100">
+                      <span>مقدمات عقود التقسيط نقداً:</span>
+                      <strong className="font-mono text-emerald-800">{(cashMetrics.installment_down_payments || 0).toLocaleString()} {currency}</strong>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-emerald-100">
+                      <span>أقساط شهرية محصلة نقداً:</span>
+                      <strong className="font-mono text-emerald-800">{(cashMetrics.installments_collected || 0).toLocaleString()} {currency}</strong>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span>إيداعات نقدية أخرى بالخزينة:</span>
+                      <strong className="font-mono text-emerald-800">{(cashMetrics.manual_inflows || 0).toLocaleString()} {currency}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-4">
+                  <h4 className="font-extrabold text-sm text-rose-900 mb-2 flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-rose-600 rotate-180" />
+                    <span>منصرفات ومدفوعات الدرج النقدي اليوم (-{(cashMetrics.total_cash_out || 0).toLocaleString()} {currency})</span>
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-rose-100">
+                      <span>مصروفات نثرية وإدارية:</span>
+                      <strong className="font-mono text-rose-800">-{(cashMetrics.cash_expenses || 0).toLocaleString()} {currency}</strong>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-rose-100">
+                      <span>سداد دفعات الموردين نقداً:</span>
+                      <strong className="font-mono text-rose-800">-{(cashMetrics.supplier_cash_paid || 0).toLocaleString()} {currency}</strong>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span>مرتجعات مستردة نقداً للعملاء:</span>
+                      <strong className="font-mono text-rose-800">-{(cashMetrics.returns_cash_refund || 0).toLocaleString()} {currency}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: VISA (2%) */}
+          {activeChannelTab === 'visa' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex justify-between items-center text-xs">
+                <div>
+                  <h4 className="font-black text-sm text-blue-900">عمليات بطاقات الائتمان وفيزا POS</h4>
+                  <p className="text-slate-600 mt-0.5">يتم احتساب رسم تحصيل بنكي 2% وتخصم كمصروف تحصيل بنكي</p>
+                </div>
+                <div className="flex gap-4 font-mono font-bold">
+                  <div>إجمالي: <span className="text-slate-900">{(visaMetrics.gross || 0).toLocaleString()} {currency}</span></div>
+                  <div>عمولة 2%: <span className="text-rose-600">-{(visaMetrics.fees || 0).toLocaleString()} {currency}</span></div>
+                  <div>صافي المعرض: <span className="text-blue-700">{(visaMetrics.net || 0).toLocaleString()} {currency}</span></div>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold">
+                    <tr>
+                      <th className="py-3 px-4">رقم الفاتورة</th>
+                      <th className="py-3 px-4">العميل</th>
+                      <th className="py-3 px-4">إجمالي العملية</th>
+                      <th className="py-3 px-4">عمولة التحصيل (2%)</th>
+                      <th className="py-3 px-4">صافي المعرض</th>
+                      <th className="py-3 px-4">الملاحظات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {itemized.visaSales?.map(s => (
+                      <tr key={s.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
+                        <td className="py-3 px-4 font-bold text-slate-800">{s.customer_name || 'عميل فيزا'}</td>
+                        <td className="py-3 px-4 font-black font-mono text-slate-900" dir="ltr">{Number(s.total).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-mono text-rose-600 font-bold" dir="ltr">-{Number(s.collection_fee || (Number(s.total) * 0.02)).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-black font-mono text-blue-700" dir="ltr">{(Number(s.total) - Number(s.collection_fee || (Number(s.total) * 0.02))).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 text-slate-500">{s.notes || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: INSTAPAY (1 EGP / 1000 EGP) */}
+          {activeChannelTab === 'instapay' && (
+            <div className="space-y-4">
+              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex justify-between items-center text-xs">
+                <div>
+                  <h4 className="font-black text-sm text-purple-900">تحويلات شبكة المدفوعات اللحظية إنستاباي InstaPay</h4>
+                  <p className="text-slate-600 mt-0.5">يتم احتساب رسم تحصيل 1 جنيه لكل 1000 جنيه من قيمة العملية وتخصم كمصروف</p>
+                </div>
+                <div className="flex gap-4 font-mono font-bold">
+                  <div>إجمالي: <span className="text-slate-900">{(instapayMetrics.gross || 0).toLocaleString()} {currency}</span></div>
+                  <div>رسوم إنستاباي: <span className="text-rose-600">-{(instapayMetrics.fees || 0).toLocaleString()} {currency}</span></div>
+                  <div>صافي المعرض: <span className="text-purple-700">{(instapayMetrics.net || 0).toLocaleString()} {currency}</span></div>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold">
+                    <tr>
+                      <th className="py-3 px-4">رقم الفاتورة</th>
+                      <th className="py-3 px-4">العميل</th>
+                      <th className="py-3 px-4">المبلغ المحول</th>
+                      <th className="py-3 px-4">رسم التحصيل (1ج/1000ج)</th>
+                      <th className="py-3 px-4">صافي المعرض</th>
+                      <th className="py-3 px-4">الملاحظات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {itemized.instapaySales?.map(s => (
+                      <tr key={s.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
+                        <td className="py-3 px-4 font-bold text-slate-800">{s.customer_name || 'عميل إنستاباي'}</td>
+                        <td className="py-3 px-4 font-black font-mono text-slate-900" dir="ltr">{Number(s.total).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-mono text-rose-600 font-bold" dir="ltr">-{Number(s.collection_fee || Math.ceil(Number(s.total) / 1000)).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-black font-mono text-purple-700" dir="ltr">{(Number(s.total) - Number(s.collection_fee || Math.ceil(Number(s.total) / 1000))).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 text-slate-500">{s.notes || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: WALLET (1%) */}
+          {activeChannelTab === 'wallet' && (
+            <div className="space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex justify-between items-center text-xs">
+                <div>
+                  <h4 className="font-black text-sm text-amber-900">المحافظ الإلكترونية (فودافون كاش، أورنج كاش، وي باي، اتصالات كاش)</h4>
+                  <p className="text-slate-600 mt-0.5">يتم احتساب رسم تحصيل 1% من قيمة العملية وتخصم كمصروف</p>
+                </div>
+                <div className="flex gap-4 font-mono font-bold">
+                  <div>إجمالي: <span className="text-slate-900">{(walletMetrics.gross || 0).toLocaleString()} {currency}</span></div>
+                  <div>رسوم المحفظة (1%): <span className="text-rose-600">-{(walletMetrics.fees || 0).toLocaleString()} {currency}</span></div>
+                  <div>صافي المعرض: <span className="text-amber-700">{(walletMetrics.net || 0).toLocaleString()} {currency}</span></div>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold">
+                    <tr>
+                      <th className="py-3 px-4">رقم الفاتورة</th>
+                      <th className="py-3 px-4">العميل</th>
+                      <th className="py-3 px-4">المبلغ الإجمالي</th>
+                      <th className="py-3 px-4">رسم المحفظة (1%)</th>
+                      <th className="py-3 px-4">صافي المعرض</th>
+                      <th className="py-3 px-4">الملاحظات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {itemized.walletSales?.map(s => (
+                      <tr key={s.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
+                        <td className="py-3 px-4 font-bold text-slate-800">{s.customer_name || 'عميل محفظة'}</td>
+                        <td className="py-3 px-4 font-black font-mono text-slate-900" dir="ltr">{Number(s.total).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-mono text-rose-600 font-bold" dir="ltr">-{Number(s.collection_fee || (Number(s.total) * 0.01)).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 font-black font-mono text-amber-700" dir="ltr">{(Number(s.total) - Number(s.collection_fee || (Number(s.total) * 0.01))).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 text-slate-500">{s.notes || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SUPPLIER PAYMENTS */}
+          {activeChannelTab === 'suppliers' && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex justify-between items-center text-xs">
+                <div>
+                  <h4 className="font-black text-sm text-slate-900">سداد مستحقات الموردين والشركات اليوم</h4>
+                  <p className="text-slate-600 mt-0.5">سندات الصرف المسجلة لسداد دفعات الموردين (من الخزينة النقدية أو الحساب البنكي)</p>
+                </div>
+                <div className="flex gap-4 font-mono font-bold">
+                  <div>سداد نقدي: <span className="text-rose-700 font-mono">{(supplierPayMetrics.cash_paid || 0).toLocaleString()} {currency}</span></div>
+                  <div>سداد بنكي: <span className="text-indigo-700 font-mono">{(supplierPayMetrics.bank_paid || 0).toLocaleString()} {currency}</span></div>
+                  <div>إجمالي السداد: <span className="text-slate-900 font-mono">{(supplierPayMetrics.total || 0).toLocaleString()} {currency}</span></div>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold">
+                    <tr>
+                      <th className="py-3 px-4">رقم السند</th>
+                      <th className="py-3 px-4">المورد</th>
+                      <th className="py-3 px-4">نوع السداد</th>
+                      <th className="py-3 px-4">طريقة الدفع</th>
+                      <th className="py-3 px-4">المبلغ</th>
+                      <th className="py-3 px-4">البيان والملاحظات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {itemized.supplierPaymentsList?.map(sp => (
+                      <tr key={sp.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-mono font-bold text-slate-900">#{sp.id}</td>
+                        <td className="py-3 px-4 font-bold text-slate-800">{sp.supplier_name}</td>
+                        <td className="py-3 px-4"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{sp.payment_type === 'full' ? 'كامل المديونية' : 'دفعة تحت الحساب'}</span></td>
+                        <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${sp.payment_method === 'cash' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>{sp.payment_method === 'cash' ? '💵 نقداً من الخزينة' : '🏦 تحويل بنكي'}</span></td>
+                        <td className="py-3 px-4 font-black font-mono text-rose-700" dir="ltr">{Number(sp.amount).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 text-slate-500">{sp.notes || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: RETURNS */}
+          {activeChannelTab === 'returns' && (
+            <div className="space-y-4">
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex justify-between items-center text-xs">
+                <div>
+                  <h4 className="font-black text-sm text-rose-900">سجل مرتجعات المبيعات اليوم</h4>
+                  <p className="text-slate-600 mt-0.5">تفصيل المبالغ المستردة نقداً أو المضافة إلى رصيد حساب العميل</p>
+                </div>
+                <div className="flex gap-4 font-mono font-bold">
+                  <div>استرداد نقدي: <span className="text-rose-700 font-mono">{(returnMetrics.cash_refunds || 0).toLocaleString()} {currency}</span></div>
+                  <div>رصيد عميل (دائن): <span className="text-blue-700 font-mono">{(returnMetrics.credit_refunds || 0).toLocaleString()} {currency}</span></div>
+                  <div>إجمالي المرتجع: <span className="text-slate-900 font-mono">{(returnMetrics.total || 0).toLocaleString()} {currency}</span></div>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold">
+                    <tr>
+                      <th className="py-3 px-4">رقم المرتجع</th>
+                      <th className="py-3 px-4">رقم الفاتورة</th>
+                      <th className="py-3 px-4">العميل</th>
+                      <th className="py-3 px-4">طريقة الاسترداد</th>
+                      <th className="py-3 px-4">المبلغ المسترد</th>
+                      <th className="py-3 px-4">السبب</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {itemized.returnsList?.map(r => (
+                      <tr key={r.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-mono font-bold text-slate-900">#{r.id}</td>
+                        <td className="py-3 px-4 font-mono text-blue-900">{r.invoice_no}</td>
+                        <td className="py-3 px-4 font-bold text-slate-800">{r.customer_name || 'عميل'}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.refund_method === 'credit' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
+                            {r.refund_method === 'credit' ? '💼 إضافة لرصيد العميل' : '💵 استرداد نقدي من الخزينة'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-black font-mono text-rose-700" dir="ltr">{Number(r.refund_amount).toLocaleString()} {currency}</td>
+                        <td className="py-3 px-4 text-slate-500">{r.reason || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -440,7 +733,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
           )}
 
           {/* TAB: ALL / OTHER CHANNELS TABLE */}
-          {activeChannelTab !== 'finance' && (
+          {(activeChannelTab === 'all' || activeChannelTab === 'installments' || activeChannelTab === 'expenses') && (
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold">
@@ -455,7 +748,7 @@ export default function DailyReconciliation({ settings, currentUser }) {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {/* If All or Cash Sales */}
-                  {(activeChannelTab === 'all' || activeChannelTab === 'cash') && itemized.cashSales?.map(s => (
+                  {activeChannelTab === 'all' && itemized.pureCashSales?.map(s => (
                     <tr key={`cash-${s.id}`} className="hover:bg-slate-50">
                       <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
                       <td className="py-3 px-4 font-mono text-slate-500">{new Date(s.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</td>
@@ -466,26 +759,38 @@ export default function DailyReconciliation({ settings, currentUser }) {
                     </tr>
                   ))}
 
-                  {/* Cards */}
-                  {(activeChannelTab === 'all' || activeChannelTab === 'cards') && itemized.cardSales?.map(s => (
+                  {/* Cards in ALL */}
+                  {activeChannelTab === 'all' && itemized.visaSales?.map(s => (
                     <tr key={`card-${s.id}`} className="hover:bg-slate-50">
                       <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
                       <td className="py-3 px-4 font-mono text-slate-500">{new Date(s.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</td>
                       <td className="py-3 px-4 font-bold text-slate-900">{s.customer_name || 'عميل فيزا'}</td>
-                      <td className="py-3 px-4"><span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">💳 فيزا POS</span></td>
+                      <td className="py-3 px-4"><span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">💳 فيزا POS (2%)</span></td>
                       <td className="py-3 px-4 font-black text-blue-700 font-mono" dir="ltr">{Number(s.total).toLocaleString()} {currency}</td>
                       <td className="py-3 px-4 text-slate-500">{s.notes || '-'}</td>
                     </tr>
                   ))}
 
-                  {/* Transfers */}
-                  {(activeChannelTab === 'all' || activeChannelTab === 'transfers') && itemized.transferSales?.map(s => (
-                    <tr key={`transfer-${s.id}`} className="hover:bg-slate-50">
+                  {/* InstaPay in ALL */}
+                  {activeChannelTab === 'all' && itemized.instapaySales?.map(s => (
+                    <tr key={`insta-${s.id}`} className="hover:bg-slate-50">
                       <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
                       <td className="py-3 px-4 font-mono text-slate-500">{new Date(s.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">{s.customer_name || 'تحويل بنكي'}</td>
-                      <td className="py-3 px-4"><span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">🏦 تحويل / انستاباي</span></td>
+                      <td className="py-3 px-4 font-bold text-slate-900">{s.customer_name || 'عميل إنستاباي'}</td>
+                      <td className="py-3 px-4"><span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">⚡ إنستاباي</span></td>
                       <td className="py-3 px-4 font-black text-purple-700 font-mono" dir="ltr">{Number(s.total).toLocaleString()} {currency}</td>
+                      <td className="py-3 px-4 text-slate-500">{s.notes || '-'}</td>
+                    </tr>
+                  ))}
+
+                  {/* Wallet in ALL */}
+                  {activeChannelTab === 'all' && itemized.walletSales?.map(s => (
+                    <tr key={`wal-${s.id}`} className="hover:bg-slate-50">
+                      <td className="py-3 px-4 font-mono font-bold text-blue-900" dir="ltr">{s.invoice_no}</td>
+                      <td className="py-3 px-4 font-mono text-slate-500">{new Date(s.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td className="py-3 px-4 font-bold text-slate-900">{s.customer_name || 'عميل محفظة'}</td>
+                      <td className="py-3 px-4"><span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">📱 محفظة (1%)</span></td>
+                      <td className="py-3 px-4 font-black text-amber-700 font-mono" dir="ltr">{Number(s.total).toLocaleString()} {currency}</td>
                       <td className="py-3 px-4 text-slate-500">{s.notes || '-'}</td>
                     </tr>
                   ))}
@@ -565,14 +870,14 @@ export default function DailyReconciliation({ settings, currentUser }) {
                     </div>
 
                     <div className="text-center">
-                      <div className="w-16 h-16 mx-auto p-1 border rounded-xl mb-1">
-                        <img src="/logo.svg" alt="شعار" className="w-full h-full object-contain" />
+                      <div className="w-16 h-16 mx-auto p-1 border rounded-xl mb-1 flex items-center justify-center">
+                        <img src="/logo.svg" alt="شعار" className="max-h-full max-w-full object-contain" />
                       </div>
                       <span className="text-[10px] font-bold text-slate-500">محضر مراجعة وتقفيل يومية معتمد</span>
                     </div>
 
                     <div className="text-left border border-slate-300 p-2 rounded-lg bg-slate-50 text-[10px] space-y-0.5" dir="rtl">
-                      <div>التاريخ: <span className="font-bold">{selectedDate}</span></div>
+                      <div>التاريخ: <span className="font-bold font-mono">{selectedDate}</span></div>
                       <div>الفرع: <span className="font-bold">{selectedBranch ? branches.find(b => b.id === Number(selectedBranch))?.name : 'المركز الرئيسي'}</span></div>
                       <div>المسؤول: <span className="font-bold">{currentUser?.name || 'الكاشير والمراجع'}</span></div>
                     </div>
@@ -595,34 +900,71 @@ export default function DailyReconciliation({ settings, currentUser }) {
                       </tr>
                     </thead>
                     <tbody>
+                      {/* Cash Drawer */}
                       <tr>
                         <td className="border border-slate-300 p-2 font-bold">💵 النقدية والكاش بالدرج</td>
-                        <td className="border border-slate-300 p-2 text-center">{(itemized.cashSales?.length || 0) + (installmentMetrics.count || 0)}</td>
+                        <td className="border border-slate-300 p-2 text-center">{(itemized.pureCashSales?.length || 0) + (installmentMetrics.count || 0)}</td>
                         <td className="border border-slate-300 p-2 text-center font-mono">{(cashMetrics.total_cash_in || 0).toLocaleString()} {currency}</td>
                         <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">مصروفات: -{(cashMetrics.total_cash_out || 0).toLocaleString()} {currency}</td>
                         <td className="border border-slate-300 p-2 text-center font-mono font-bold text-emerald-800">{(cashMetrics.net_cash_drawer_flow || 0).toLocaleString()} {currency}</td>
                       </tr>
+                      {/* Visa POS */}
                       <tr>
-                        <td className="border border-slate-300 p-2 font-bold">💳 بطاقات ائتمان / فيزا POS</td>
-                        <td className="border border-slate-300 p-2 text-center">{cardMetrics.count || 0}</td>
-                        <td className="border border-slate-300 p-2 text-center font-mono">{(cardMetrics.total_amount || 0).toLocaleString()} {currency}</td>
-                        <td className="border border-slate-300 p-2 text-center text-slate-400 font-mono">0 {currency}</td>
-                        <td className="border border-slate-300 p-2 text-center font-mono font-bold">{(cardMetrics.total_amount || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 font-bold">💳 بطاقات ائتمان / فيزا POS (2%)</td>
+                        <td className="border border-slate-300 p-2 text-center">{visaMetrics.count || 0}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono">{(visaMetrics.gross || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(visaMetrics.fees || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-blue-800">{(visaMetrics.net || 0).toLocaleString()} {currency}</td>
                       </tr>
+                      {/* InstaPay */}
+                      <tr>
+                        <td className="border border-slate-300 p-2 font-bold">⚡ إنستاباي InstaPay (1ج/1000ج)</td>
+                        <td className="border border-slate-300 p-2 text-center">{instapayMetrics.count || 0}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono">{(instapayMetrics.gross || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(instapayMetrics.fees || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-purple-800">{(instapayMetrics.net || 0).toLocaleString()} {currency}</td>
+                      </tr>
+                      {/* Wallets */}
+                      <tr>
+                        <td className="border border-slate-300 p-2 font-bold">📱 محافظ إلكترونية كاش (1%)</td>
+                        <td className="border border-slate-300 p-2 text-center">{walletMetrics.count || 0}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono">{(walletMetrics.gross || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(walletMetrics.fees || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-amber-800">{(walletMetrics.net || 0).toLocaleString()} {currency}</td>
+                      </tr>
+                      {/* Consumer Finance */}
                       <tr>
                         <td className="border border-slate-300 p-2 font-bold">🏢 شركات التمويل (فاليو، كونتاكت، سهولة...)</td>
                         <td className="border border-slate-300 p-2 text-center">{financeMetrics.count || 0}</td>
-                        <td className="border border-slate-300 p-2 text-center font-mono">{(financeMetrics.gross_amount || 0).toLocaleString()} {currency}</td>
-                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(financeMetrics.total_merchant_fees || 0).toLocaleString()} {currency}</td>
-                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-indigo-900">{(financeMetrics.net_store_payout || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono">{(financeMetrics.gross || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(financeMetrics.fees || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-indigo-900">{(financeMetrics.net || 0).toLocaleString()} {currency}</td>
                       </tr>
+                      {/* Banks */}
                       <tr>
-                        <td className="border border-slate-300 p-2 font-bold">🏦 تحويلات بنكية ومحافظ انستاباي</td>
-                        <td className="border border-slate-300 p-2 text-center">{transferMetrics.count || 0}</td>
-                        <td className="border border-slate-300 p-2 text-center font-mono">{(transferMetrics.total_amount || 0).toLocaleString()} {currency}</td>
-                        <td className="border border-slate-300 p-2 text-center text-slate-400 font-mono">0 {currency}</td>
-                        <td className="border border-slate-300 p-2 text-center font-mono font-bold">{(transferMetrics.total_amount || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 font-bold">🏦 تمويلات البنوك المباشرة</td>
+                        <td className="border border-slate-300 p-2 text-center">{bankMetrics.count || 0}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono">{(bankMetrics.gross || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(bankMetrics.fees || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-slate-800">{(bankMetrics.net || 0).toLocaleString()} {currency}</td>
                       </tr>
+                      {/* Supplier Payments (Cash Out) */}
+                      <tr>
+                        <td className="border border-slate-300 p-2 font-bold text-rose-800">🚚 سداد دفعات للموردين من الخزينة</td>
+                        <td className="border border-slate-300 p-2 text-center">{supplierPayMetrics.count || 0}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(supplierPayMetrics.cash_paid || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-slate-400">---</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-rose-700">-{(supplierPayMetrics.cash_paid || 0).toLocaleString()} {currency}</td>
+                      </tr>
+                      {/* Returns */}
+                      <tr>
+                        <td className="border border-slate-300 p-2 font-bold text-rose-800">🔄 مرتجعات مبيعات مستردة نقداً</td>
+                        <td className="border border-slate-300 p-2 text-center">{returnMetrics.count || 0}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-rose-700">-{(returnMetrics.cash_refunds || 0).toLocaleString()} {currency}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono text-slate-400">---</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-rose-700">-{(returnMetrics.cash_refunds || 0).toLocaleString()} {currency}</td>
+                      </tr>
+                      {/* Gross Revenue Total */}
                       <tr className="bg-slate-100 font-black text-sm">
                         <td className="border border-slate-300 p-2">الإجمالي العام لتداول اليوم</td>
                         <td className="border border-slate-300 p-2 text-center font-mono">{summary.total_invoices_count || 0} فاتورة</td>

@@ -5,7 +5,7 @@ import { api } from '../api';
 export default function InvoicePrint({ sale, settings, onClose }) {
   const [currentSale, setCurrentSale] = useState(sale);
   const [loadingSale, setLoadingSale] = useState(false);
-  const [printFormat, setPrintFormat] = useState('a4'); // 'a4' or 'thermal'
+  const [printFormat, setPrintFormat] = useState('a4'); // 'a4', 'a5', or 'thermal'
   const [whatsAppPhone, setWhatsAppPhone] = useState(sale?.customer_phone || '');
   const [showWhatsAppInput, setShowWhatsAppInput] = useState(false);
 
@@ -82,7 +82,7 @@ export default function InvoicePrint({ sale, settings, onClose }) {
       : '';
 
     const message = 
-`🌟 *${storeName}* 🌟
+`🌟 *فاتورة شراء معتمدة* 🌟
 ━━━━━━━━━━━━━━━━━━━━
 💐 أهلاً بك عزيزنا العميل: *${currentSale.customer_name || 'المحترم'}*
 
@@ -117,35 +117,45 @@ ${publicLink}
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto print:static print:inset-auto print:bg-transparent print:backdrop-blur-none print:p-0 print:m-0 print:overflow-visible print:block print:w-full">
-      {/* Dynamic Print CSS */}
+      {/* Dynamic Print CSS (Requirement 13 & 14) */}
       <style>{`
         @media print {
           @page {
-            size: ${printFormat === 'thermal' ? '80mm auto' : 'A4 portrait'};
-            margin: ${printFormat === 'thermal' ? '0mm' : '8mm 10mm'};
+            size: ${printFormat === 'thermal' ? '80mm auto' : printFormat === 'a5' ? 'A5 portrait' : 'A4 portrait'};
+            margin: ${printFormat === 'thermal' ? '0mm' : printFormat === 'a5' ? '4mm 6mm' : '8mm 10mm'};
           }
-          body {
+          html, body {
             background: #ffffff !important;
             margin: 0 !important;
             padding: 0 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .no-print,
-          .print\\:hidden {
-            display: none !important;
+          /* Strictly hide all other page chrome */
+          body * {
+            visibility: hidden !important;
+          }
+          #invoice-printable-area,
+          #invoice-printable-area * {
+            visibility: visible !important;
           }
           #invoice-printable-area {
-            position: static !important;
-            box-shadow: none !important;
-            border: none !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: ${printFormat === 'thermal' ? '72mm !important' : '100% !important'};
             max-width: ${printFormat === 'thermal' ? '72mm !important' : '100% !important'};
             margin: 0 auto !important;
-            padding: ${printFormat === 'thermal' ? '2mm !important' : '0mm !important'};
+            padding: ${printFormat === 'thermal' ? '2mm !important' : printFormat === 'a5' ? '4mm !important' : '0mm !important'};
+            box-shadow: none !important;
+            border: none !important;
             height: auto !important;
             min-height: 0 !important;
             overflow: visible !important;
+          }
+          .no-print,
+          .print\\:hidden {
+            display: none !important;
           }
           table {
             page-break-inside: auto !important;
@@ -176,7 +186,15 @@ ${publicLink}
                   printFormat === 'a4' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                نموذج A4 رسمي مع الضمان
+                مقاس A4 رسمي
+              </button>
+              <button
+                onClick={() => setPrintFormat('a5')}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  printFormat === 'a5' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                مقاس A5 مدمج
               </button>
               <button
                 onClick={() => setPrintFormat('thermal')}
@@ -184,7 +202,7 @@ ${publicLink}
                   printFormat === 'thermal' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                إيصال كاشير حراري (80mm)
+                إيصال حراري (80mm)
               </button>
             </div>
           </div>
@@ -285,11 +303,10 @@ ${publicLink}
               <div className="text-center pb-2 border-b border-dashed border-black">
                 <img
                   src={logoUrl}
-                  alt={storeName}
-                  className="h-9 max-w-[160px] mx-auto object-contain mb-1"
+                  alt="شعار المعرض"
+                  className="h-12 max-w-[180px] mx-auto object-contain mb-1"
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
-                <h1 className="font-black text-sm text-black">{storeName}</h1>
                 <p className="text-[10px] text-gray-700 font-semibold mt-0.5">{settings?.tagline || 'للأجهزة الكهربائية والمنزلية'}</p>
                 <p className="text-[9px] text-gray-600 mt-1">
                   📍 {currentSale.branch_address || settings?.address || 'شارع الأزهر - القاهرة'}
@@ -441,7 +458,7 @@ ${publicLink}
             /* ========================================================== */
             <div
               id="invoice-printable-area"
-              className="bg-white shadow-xl text-slate-900 w-full max-w-[210mm] p-6 sm:p-7 print:p-0 print:m-0 print:min-h-0 print:w-full print:max-w-none print:shadow-none print:border-none print:block rounded-xl border border-slate-200 font-['Cairo',sans-serif] text-xs leading-normal"
+              className={`bg-white shadow-xl text-slate-900 w-full ${printFormat === 'a5' ? 'max-w-[148mm] text-[11px]' : 'max-w-[210mm] text-xs'} p-5 sm:p-6 print:p-0 print:m-0 print:min-h-0 print:w-full print:max-w-none print:shadow-none print:border-none print:block rounded-xl border border-slate-200 font-['Cairo',sans-serif] leading-normal`}
             >
               {/* Header with Logo & Meta */}
               <div className="border-b-2 border-slate-900 pb-2.5 mb-2.5 flex items-start justify-between gap-4">
@@ -449,15 +466,12 @@ ${publicLink}
                   <div className="flex items-center gap-3 mb-1">
                     <img
                       src={logoUrl}
-                      alt={storeName}
-                      className="h-10 sm:h-11 max-w-[180px] object-contain"
+                      alt="شعار المعرض"
+                      className="h-12 sm:h-14 max-w-[220px] object-contain"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                     <div>
-                      <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
-                        {storeName}
-                      </h1>
-                      <p className="text-[10px] text-slate-600 font-bold">
+                      <p className="text-[11px] text-slate-600 font-bold">
                         {settings?.tagline || 'تجارة وتوزيع الأجهزة الكهربائية والمنزلية والتقسيط المريح'}
                       </p>
                     </div>
@@ -680,7 +694,7 @@ ${publicLink}
                   <p className="font-bold text-slate-800 text-[11px]">ختم وتوقيع إدارة المعرض</p>
                   <div className="h-9 border-b border-dashed border-slate-400 mt-1 flex items-center justify-center">
                     <span className="text-[10px] font-bold text-blue-900 border-2 border-dashed border-blue-700 px-3 py-0.5 rounded rotate-[-3deg] bg-blue-50/50">
-                      معتمد رسمياً | {storeName}
+                      ختم وتوقيع المعرض المعتمد
                     </span>
                   </div>
                   <p className="text-[9px] text-slate-500 mt-1">س.ت: {settings?.commercial_reg || '198425'} | ب.ض: {settings?.tax_number || '654-321-987'}</p>

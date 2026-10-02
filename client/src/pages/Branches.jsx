@@ -63,6 +63,7 @@ export default function Branches({ settings, currentUser, onPrintTransfer, initi
   const [showAddWarehouseModal, setShowAddWarehouseModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
+  const [printShortageRequest, setPrintShortageRequest] = useState(null);
   const [selectedWarehouseSerials, setSelectedWarehouseSerials] = useState(null);
   const [warehouseSerialsList, setWarehouseSerialsList] = useState([]);
 
@@ -981,6 +982,17 @@ export default function Branches({ settings, currentUser, onPrintTransfer, initi
                          req.status === 'approved' ? '📦 تمت الموافقة والتجهيز' :
                          req.status === 'rejected' ? '❌ مرفوض' : '⏳ قيد المراجعة'}
                       </span>
+
+                      {/* Print Button (Requirement 3) */}
+                      <button
+                        type="button"
+                        onClick={() => setPrintShortageRequest(req)}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-300 transition cursor-pointer"
+                        title="طباعة إذن وطلب النواقص الرسمي"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-blue-600" />
+                        <span>طباعة طلب النواقص</span>
+                      </button>
                     </div>
                   </div>
 
@@ -2374,6 +2386,186 @@ export default function Branches({ settings, currentUser, onPrintTransfer, initi
           settings={settings}
           onClose={() => setLocalPrintTransfer(null)}
         />
+      )}
+
+      {/* Printable Stock Shortage Request Modal (Requirement 3) */}
+      {printShortageRequest && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto print:static print:inset-auto print:bg-transparent print:backdrop-blur-none print:p-0 print:m-0 print:overflow-visible print:block print:w-full">
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 10mm;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #shortage-printable-area,
+              #shortage-printable-area * {
+                visibility: visible !important;
+              }
+              #shortage-printable-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden print:max-h-none print:shadow-none print:border-none print:rounded-none">
+            {/* Header controls bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between no-print">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="w-5 h-5 text-rose-600" />
+                <h3 className="font-bold text-slate-800 text-sm">
+                  معاينة وطباعة إذن طلب النواقص والإمداد ({printShortageRequest.request_no})
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md transition cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة إذن النواقص (A4)</span>
+                </button>
+                <button
+                  onClick={() => setPrintShortageRequest(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Document Printable Body */}
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-100 flex justify-center print:p-0 print:bg-white print:overflow-visible">
+              <div
+                id="shortage-printable-area"
+                className="bg-white text-slate-900 w-[210mm] max-w-full p-8 shadow-md rounded-xl border border-slate-200 text-xs leading-relaxed print:shadow-none print:border-none print:p-0"
+              >
+                {/* Formal Document Header */}
+                <div className="border-b-2 border-slate-900 pb-3 mb-4 flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={settings?.logo_url || '/logo.svg'}
+                      alt="شعار المعرض"
+                      className="h-12 max-w-[200px] object-contain"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                    <div>
+                      <h2 className="text-base font-black text-slate-900">
+                        {settings?.store_name || 'معرض دكان عبد العزيز للأجهزة الكهربائية'}
+                      </h2>
+                      <p className="text-[11px] text-slate-600 font-bold">
+                        إدارة الإمداد والتموين وحركة المخازن والفروع
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono text-[11px]">
+                    <p className="font-bold text-rose-700 text-sm">{printShortageRequest.request_no}</p>
+                    <p className="text-slate-500">التاريخ: {printShortageRequest.created_at?.slice(0, 10)}</p>
+                  </div>
+                </div>
+
+                <div className="text-center my-3 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
+                  <h3 className="text-base font-black text-rose-900">
+                    إذن طلب نواقص وتعزيز مخزون صالة العرض
+                  </h3>
+                  <p className="text-[11px] text-rose-700 font-semibold mt-0.5">
+                    درجة الأهمية: {printShortageRequest.urgency === 'critical' ? '🚨 عاجل جداً وفوري' : printShortageRequest.urgency === 'urgent' ? '⚡ عاجل' : 'عادي'} | الحالة: {printShortageRequest.status === 'fulfilled' ? 'تم التوريد' : printShortageRequest.status === 'approved' ? 'معتمد للتجهيز' : 'قيد المراجعة'}
+                  </p>
+                </div>
+
+                {/* Info Grid */}
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 mb-4 text-xs">
+                  <div>
+                    <span className="text-slate-500 font-bold">الفرع الطالب (المعرض): </span>
+                    <strong className="text-slate-900 font-extrabold">{printShortageRequest.branch_name}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold">المستودع المزوّد المطلوب منه: </span>
+                    <strong className="text-slate-900 font-extrabold">{printShortageRequest.from_warehouse_name}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold">الموظف / المسؤول الطالب: </span>
+                    <strong className="text-slate-900">{printShortageRequest.requested_by}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold">تاريخ وتوقيت الطلب: </span>
+                    <strong className="text-slate-900 font-mono" dir="ltr">{printShortageRequest.created_at}</strong>
+                  </div>
+                </div>
+
+                {/* Items Table */}
+                <div className="mb-4">
+                  <h4 className="font-black text-slate-800 text-xs mb-2">بيان الأجهزة والموديلات المطلوبة:</h4>
+                  <table className="w-full border-collapse border border-slate-300 text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 font-bold text-slate-700">
+                        <th className="border border-slate-300 p-2 text-center w-10">#</th>
+                        <th className="border border-slate-300 p-2 text-right">اسم الجهاز والصنف</th>
+                        <th className="border border-slate-300 p-2 text-center">الموديل / الكود</th>
+                        <th className="border border-slate-300 p-2 text-center w-24">الكمية المطلوبة</th>
+                        <th className="border border-slate-300 p-2 text-center w-28">المتوفر بالمخزن</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printShortageRequest.items?.map((it, idx) => (
+                        <tr key={idx} className="border-b border-slate-200 text-center">
+                          <td className="border border-slate-300 p-2 font-mono">{idx + 1}</td>
+                          <td className="border border-slate-300 p-2 text-right font-bold text-slate-900">
+                            {it.product_name}
+                          </td>
+                          <td className="border border-slate-300 p-2 font-mono text-slate-600">
+                            {it.model_number || '-'}
+                          </td>
+                          <td className="border border-slate-300 p-2 font-black text-rose-700 text-sm">
+                            {it.quantity}
+                          </td>
+                          <td className="border border-slate-300 p-2 font-bold text-slate-600">
+                            {it.total_in_stock ?? '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {printShortageRequest.notes && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-5 text-xs">
+                    <strong className="text-slate-800 block mb-1">ملاحظات وأسباب طلب النواقص:</strong>
+                    <p className="text-slate-600">{printShortageRequest.notes}</p>
+                  </div>
+                )}
+
+                {/* Signatures */}
+                <div className="grid grid-cols-3 gap-6 pt-6 border-t-2 border-slate-300 text-center text-xs mt-8">
+                  <div>
+                    <p className="font-bold text-slate-800 mb-8">مسؤول مبيعات الفرع الطالب</p>
+                    <div className="border-b border-dashed border-slate-400"></div>
+                    <p className="text-[10px] text-slate-500 mt-1">الاسم والتوقيع</p>
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-800 mb-8">أمين المستودع المزوّد (الصرف)</p>
+                    <div className="border-b border-dashed border-slate-400"></div>
+                    <p className="text-[10px] text-slate-500 mt-1">الاسم والتوقيع</p>
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-800 mb-8">اعتماد إدارة المعارض والرقابة</p>
+                    <div className="border-b border-dashed border-slate-400"></div>
+                    <p className="text-[10px] text-slate-500 mt-1">الختم والتوقيع الرسمي</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -532,20 +532,6 @@ ${publicLink}
                           <span>واتساب</span>
                         </button>
 
-                        {/* Copy Link */}
-                        <button
-                          onClick={() => handleCopyLink(sale.invoice_no)}
-                          title="نسخ رابط الفاتورة الإلكترونية المباشر"
-                          className={`p-1.5 rounded-lg transition cursor-pointer text-[11px] font-bold flex items-center gap-1 ${
-                            copiedInvoiceNo === sale.invoice_no
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                          }`}
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>{copiedInvoiceNo === sale.invoice_no ? 'تم النسخ!' : 'الرابط'}</span>
-                        </button>
-
                         {/* Return RMA button */}
                         {onInitiateReturn && (
                           <button

@@ -60,6 +60,19 @@ export default function Installments({ onPrintContract, onPrintReceipt, settings
     }
   };
 
+  const handleViewContractByInvoiceNo = async (planId) => {
+    try {
+      const fullPlan = await api.getInstallmentPlan(planId);
+      if (onPrintContract) {
+        onPrintContract(fullPlan);
+      } else {
+        setViewPlan(fullPlan);
+      }
+    } catch (err) {
+      alert(err.message || 'خطأ أثناء جلب تفاصيل العقد');
+    }
+  };
+
   const handleOpenPayModal = (payment) => {
     setPayPayment(payment);
     setPayAmount(payment.amount_due);
@@ -174,8 +187,17 @@ export default function Installments({ onPrintContract, onPrintReceipt, settings
                 const paidPercentage = Math.round(((p.total_installment_amount - p.remaining_balance) / p.total_installment_amount) * 100);
                 return (
                   <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-blue-700" dir="ltr">
-                      {p.invoice_no}
+                    <td className="py-3.5 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleViewContractByInvoiceNo(p.id)}
+                        className="font-mono font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 border border-blue-200 px-2 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                        dir="ltr"
+                        title="انقر لمشاهدة وطباعة عقد التقسيط وإيصالات الأمانة"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-blue-600" />
+                        <span>{p.invoice_no}</span>
+                      </button>
                     </td>
 
                     <td className="py-3.5 px-4">

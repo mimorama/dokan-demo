@@ -29,6 +29,7 @@ import Settings from './pages/Settings';
 import Users from './pages/Users';
 import Sales from './pages/Sales';
 import DailyReconciliation from './pages/DailyReconciliation';
+import Accounting from './pages/Accounting';
 
 import { api } from './api';
 
@@ -83,11 +84,11 @@ export default function App() {
     if (!currentUser) return;
 
     const rolePermissions = {
-      admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
-      manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
+      admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
+      manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
       cashier: ['pos', 'sales', 'reconciliation', 'customers', 'serials', 'installments'],
       storekeeper: ['products', 'branches', 'purchases', 'serials', 'suppliers'],
-      accountant: ['dashboard', 'sales', 'reconciliation', 'purchases', 'cashbox', 'customers', 'suppliers', 'reports']
+      accountant: ['dashboard', 'sales', 'reconciliation', 'accounting', 'purchases', 'cashbox', 'customers', 'suppliers', 'reports']
     };
     const allowed = rolePermissions[currentUser.role] || rolePermissions.admin;
     if (!allowed.includes(activeTab)) {
@@ -314,6 +315,13 @@ export default function App() {
 
           {activeTab === 'reports' && (
             <Reports
+              settings={settings}
+            />
+          )}
+
+          {activeTab === 'accounting' && (
+            <Accounting
+              currentUser={currentUser}
               settings={settings}
             />
           )}

@@ -200,7 +200,26 @@ export const api = {
   markNotificationRead: (id) => fetchApi(`/notifications/${id}/read`, { method: 'PUT' }),
   markAllNotificationsRead: () => fetchApi('/notifications/read-all', { method: 'PUT' }),
   deleteNotification: (id) => fetchApi(`/notifications/${id}`, { method: 'DELETE' }),
-  clearReadNotifications: () => fetchApi('/notifications/clear-read', { method: 'DELETE' })
+  clearReadNotifications: () => fetchApi('/notifications/clear-read', { method: 'DELETE' }),
+
+  // Supplier Payments
+  paySupplier: (supplierId, data) => fetchApi(`/suppliers/${supplierId}/pay`, { method: 'POST', body: JSON.stringify(data) }),
+  getSupplierPayments: (supplierId) => fetchApi(`/suppliers/${supplierId}/payments`),
+
+  // Customer Sales & Credit Transactions
+  getCustomerSales: (customerId) => fetchApi(`/customers/${customerId}/sales`),
+  getCustomerTransactions: (customerId) => fetchApi(`/customers/${customerId}/transactions`),
+
+  // Accounting System
+  getAccountingAccounts: () => fetchApi('/accounting/accounts'),
+  createAccountingAccount: (data) => fetchApi('/accounting/accounts', { method: 'POST', body: JSON.stringify(data) }),
+  getAccountingEntries: (params = '') => fetchApi(`/accounting/entries${params ? '?' + params : ''}`),
+  createAccountingEntry: (data) => fetchApi('/accounting/entries', { method: 'POST', body: JSON.stringify(data) }),
+  getAccountingLedger: (params = '') => fetchApi(`/accounting/ledger${params ? '?' + params : ''}`),
+  getTrialBalance: (params = '') => fetchApi(`/accounting/trial-balance${params ? '?' + params : ''}`),
+  getIncomeStatement: (params = '') => fetchApi(`/accounting/income-statement${params ? '?' + params : ''}`),
+  getBalanceSheet: (params = '') => fetchApi(`/accounting/balance-sheet${params ? '?' + params : ''}`),
+  getAccountingDashboard: () => fetchApi('/accounting/dashboard')
 };
 
 

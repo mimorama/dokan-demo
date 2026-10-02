@@ -17,9 +17,11 @@ import {
   Trash2,
   Edit,
   ShieldAlert,
-  ShieldCheck
+  ShieldCheck,
+  Printer
 } from 'lucide-react';
 import { api } from '../api';
+import InvoicePrint from '../components/InvoicePrint';
 
 export default function Customers({ settings }) {
   const [customers, setCustomers] = useState([]);
@@ -31,6 +33,27 @@ export default function Customers({ settings }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [creditModalCustomer, setCreditModalCustomer] = useState(null);
+
+  // Customer Invoices Modal (Requirement 8)
+  const [invoicesCustomer, setInvoicesCustomer] = useState(null);
+  const [customerSales, setCustomerSales] = useState([]);
+  const [loadingCustomerSales, setLoadingCustomerSales] = useState(false);
+  const [viewInvoicePrint, setViewInvoicePrint] = useState(null);
+
+  const handleOpenCustomerInvoices = async (cust) => {
+    setInvoicesCustomer(cust);
+    setLoadingCustomerSales(true);
+    try {
+      const sales = await api.getCustomerSales(cust.id);
+      setCustomerSales(sales || []);
+    } catch (err) {
+      alert(err.message || 'خطأ أثناء جلب فواتير العميل');
+      setCustomerSales([]);
+    } finally {
+      setLoadingCustomerSales(false);
+    }
+  };
+
   const [creditForm, setCreditForm] = useState({
     credit_score: 'A',
     max_credit_limit: 50000,
@@ -304,6 +327,7 @@ export default function Customers({ settings }) {
                 <th className="py-3 px-4">رقم الموبايل</th>
                 <th className="py-3 px-4">الرقم القومي</th>
                 <th className="py-3 px-4">التصنيف الائتماني</th>
+                <th className="py-3 px-4">رصيد العميل (دائن)</th>
                 <th className="py-3 px-4">الفواتير</th>
                 <th className="py-3 px-4">عقود التقسيط</th>
                 <th className="py-3 px-4">المتبقي (مديونية)</th>
@@ -346,7 +370,26 @@ export default function Customers({ settings }) {
                       </div>
                     )}
                   </td>
-                  <td className="py-3 px-4 font-bold text-blue-700">{c.sales_count} فواتير</td>
+                  <td className="py-3 px-4">
+                    {Number(c.balance || 0) > 0 ? (
+                      <span className="font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-lg inline-block text-xs" dir="ltr">
+                        +{Number(c.balance).toLocaleString()} {currency}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-mono text-xs">0.00 {currency}</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCustomerInvoices(c)}
+                      className="font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="اضغط لمشاهدة جميع فواتير هذا العميل وتفاصيلها"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>{c.sales_count || 0} فواتير</span>
+                    </button>
+                  </td>
                   <td className="py-3 px-4">
                     <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
                       c.active_plans_count > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
@@ -766,6 +809,143 @@ export default function Customers({ settings }) {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Customer Invoices Modal (Requirement 8) */}
+      {invoicesCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full p-6 text-xs text-slate-800 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    سجل وتدقيق فواتير العميل: {invoicesCustomer.name}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-mono" dir="ltr">
+                    هاتف: {invoicesCustomer.phone} | الرقم القومي: {invoicesCustomer.national_id || '---'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setInvoicesCustomer(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick stats */}
+            <div className="grid grid-cols-3 gap-3 mb-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 text-center">
+              <div>
+                <span className="text-[11px] text-slate-500 block">إجمالي عدد الفواتير:</span>
+                <span className="font-black text-slate-800 text-sm">{customerSales.length} فاتورة</span>
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-500 block">إجمالي قيمة المشتريات:</span>
+                <span className="font-black text-blue-700 text-sm" dir="ltr">
+                  {customerSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0).toLocaleString()} {currency}
+                </span>
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-500 block">رصيد العميل الحالي (دائن):</span>
+                <span className="font-black text-emerald-700 text-sm" dir="ltr">
+                  +{Number(invoicesCustomer.balance || 0).toLocaleString()} {currency}
+                </span>
+              </div>
+            </div>
+
+            {/* Invoices List */}
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl">
+              {loadingCustomerSales ? (
+                <div className="py-12 text-center text-slate-500 font-bold">
+                  جاري تحميل فواتير العميل...
+                </div>
+              ) : customerSales.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">
+                  لا توجد فواتير سابقة مسجلة لهذا العميل حتى الآن
+                </div>
+              ) : (
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold sticky top-0">
+                    <tr>
+                      <th className="py-2.5 px-3">رقم الفاتورة</th>
+                      <th className="py-2.5 px-3">التاريخ</th>
+                      <th className="py-2.5 px-3">الفرع</th>
+                      <th className="py-2.5 px-3">نوع البيع والدفع</th>
+                      <th className="py-2.5 px-3">الإجمالي</th>
+                      <th className="py-2.5 px-3">المسدد</th>
+                      <th className="py-2.5 px-3 text-center">معاينة وطباعة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {customerSales.map((s) => (
+                      <tr key={s.id} className="hover:bg-slate-50 transition">
+                        <td className="py-3 px-3 font-mono font-bold text-blue-700" dir="ltr">
+                          {s.invoice_no}
+                        </td>
+                        <td className="py-3 px-3 text-slate-600">
+                          {s.created_at?.slice(0, 10)}
+                        </td>
+                        <td className="py-3 px-3 text-slate-700">
+                          {s.branch_name || 'الفرع الرئيسي'}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            s.sale_type === 'cash' ? 'bg-emerald-100 text-emerald-800' :
+                            s.sale_type === 'installment' ? 'bg-amber-100 text-amber-800' :
+                            'bg-indigo-100 text-indigo-800'
+                          }`}>
+                            {s.sale_type === 'cash' ? `كاش (${s.payment_method || 'نقدي'})` :
+                             s.sale_type === 'installment' ? 'تقسيط مباشر' :
+                             (s.installment_plan_name || 'شركات تمويل/بنوك')}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-bold text-slate-900" dir="ltr">
+                          {Number(s.total).toLocaleString()} {currency}
+                        </td>
+                        <td className="py-3 px-3 font-bold text-emerald-700" dir="ltr">
+                          {Number(s.paid_amount).toLocaleString()} {currency}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setViewInvoicePrint(s)}
+                            className="bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>معاينة الفاتورة</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-3 mt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setInvoicesCustomer(null)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Print Viewer Modal */}
+      {viewInvoicePrint && (
+        <InvoicePrint
+          sale={viewInvoicePrint}
+          settings={settings}
+          onClose={() => setViewInvoicePrint(null)}
+        />
       )}
     </div>
   );

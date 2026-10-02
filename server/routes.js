@@ -105,6 +105,48 @@ function createNotification({ type, title, message, entity_type, entity_id, from
   }
 }
 
+// Automatic Double-Entry Bookkeeping Helper
+function createJournalEntry({ ref_type, ref_id, description, lines, entry_date, created_by }) {
+  try {
+    if (!lines || !Array.isArray(lines) || lines.length === 0) return null;
+
+    const today = entry_date || getCairoDate();
+    const entryNo = generateInvoiceNo('JV');
+
+    const entryRes = db.prepare(`
+      INSERT INTO journal_entries (entry_no, entry_date, ref_type, ref_id, description, created_by, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'posted')
+    `).run(entryNo, today, ref_type || 'manual', ref_id || null, description, created_by || 'النظام المحاسبي الآلي');
+
+    const entryId = entryRes.lastInsertRowid;
+
+    const insertLine = db.prepare(`
+      INSERT INTO journal_entry_lines (entry_id, account_id, debit, credit, description)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const l of lines) {
+      let accountId = l.account_id;
+      if (!accountId && l.account_code) {
+        const acc = db.prepare('SELECT id FROM accounts WHERE code = ?').get(String(l.account_code));
+        if (acc) accountId = acc.id;
+      }
+      if (!accountId) continue;
+
+      const d = Math.round((Number(l.debit) || 0) * 100) / 100;
+      const c = Math.round((Number(l.credit) || 0) * 100) / 100;
+      if (d === 0 && c === 0) continue;
+
+      insertLine.run(entryId, accountId, d, c, l.description || description);
+    }
+
+    return entryId;
+  } catch (e) {
+    console.error('Failed to create journal entry:', e);
+    return null;
+  }
+}
+
 // ==========================================
 // 1. DASHBOARD
 // ==========================================
@@ -906,6 +948,55 @@ router.get('/customers/:id', (req, res) => {
   }
 });
 
+// Get all sales / invoices for a specific customer
+router.get('/customers/:id/sales', (req, res) => {
+  try {
+    const customerId = req.params.id;
+    const sales = db.prepare(`
+      SELECT 
+        s.*,
+        c.name as customer_name,
+        c.phone as customer_phone,
+        (SELECT COUNT(*) FROM sale_items WHERE sale_id = s.id) as items_count,
+        (SELECT GROUP_CONCAT(COALESCE(p.name, si.notes), ' ، ') 
+         FROM sale_items si 
+         LEFT JOIN products p ON si.product_id = p.id 
+         WHERE si.sale_id = s.id) as products_summary
+      FROM sales s
+      JOIN customers c ON s.customer_id = c.id
+      WHERE s.customer_id = ?
+      ORDER BY s.id DESC
+    `).all(customerId);
+
+    for (const sale of sales) {
+      sale.items = db.prepare(`
+        SELECT si.*, p.name as product_name, p.model_number, p.specifications
+        FROM sale_items si
+        LEFT JOIN products p ON si.product_id = p.id
+        WHERE si.sale_id = ?
+      `).all(sale.id);
+    }
+
+    res.json(sales);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get customer balance ledger & transactions
+router.get('/customers/:id/transactions', (req, res) => {
+  try {
+    const txs = db.prepare(`
+      SELECT * FROM customer_transactions
+      WHERE customer_id = ?
+      ORDER BY id DESC
+    `).all(req.params.id);
+    res.json(txs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/customers', (req, res) => {
   try {
     const { name, phone, phone2, national_id, address, workplace, notes, guarantor } = req.body;
@@ -993,12 +1084,16 @@ router.post('/sales', (req, res) => {
       customer_id,
       customer_name,
       customer_phone,
+      customer_phone2,
       customer_national_id,
       customer_address,
-      sale_type, // 'cash', 'installment', 'card', 'transfer'
+      sale_type, // 'cash', 'bank', 'finance_company', 'installment'
+      payment_method, // 'cash', 'visa', 'instapay', 'wallet', 'bank', 'finance_company', 'installment'
       items, // array of { product_id, serial_id, unit_price, notes }
       discount,
       paid_amount,
+      paid_by_customer_credit, // Store credit used
+      collection_fee, // collection fee for electronic payment
       notes,
       installment_data // if sale_type === 'installment'
     } = req.body;
@@ -1013,9 +1108,9 @@ router.post('/sales', (req, res) => {
       // If customer not registered yet, create them automatically
       if (!finalCustomerId && customer_name) {
         const custInfo = db.prepare(`
-          INSERT INTO customers (name, phone, national_id, address, id_card_image)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(customer_name, customer_phone || '', customer_national_id || '', customer_address || '', req.body.id_card_image || req.body.customer_id_card_image || null);
+          INSERT INTO customers (name, phone, phone2, national_id, address, id_card_image)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(customer_name, customer_phone || '', customer_phone2 || '', customer_national_id || '', customer_address || '', req.body.id_card_image || req.body.customer_id_card_image || null);
         finalCustomerId = custInfo.lastInsertRowid;
       } else if (finalCustomerId && (req.body.id_card_image || req.body.customer_id_card_image)) {
         db.prepare('UPDATE customers SET id_card_image = ? WHERE id = ?')
@@ -1031,12 +1126,46 @@ router.post('/sales', (req, res) => {
       const disc = Number(discount) || 0;
       const total = Math.max(0, subtotal - disc);
       const invoiceNo = generateInvoiceNo('INV');
+
+      // Determine actual payment method
+      const actualPaymentMethod = payment_method || (
+        sale_type === 'bank' ? 'bank' :
+        sale_type === 'finance_company' ? 'finance_company' :
+        sale_type === 'installment' ? 'installment' : 'cash'
+      );
+
+      // Customer credit balance deduction
+      const creditPaid = Math.max(0, Number(paid_by_customer_credit) || 0);
+      if (creditPaid > 0 && finalCustomerId) {
+        const custRec = db.prepare('SELECT balance FROM customers WHERE id = ?').get(finalCustomerId);
+        const availBal = Number(custRec?.balance) || 0;
+        if (availBal < creditPaid) {
+          throw new Error(`رصيد العميل غير كافٍ. المتاح: ${availBal.toLocaleString()} ج.م، والمطلوب استخدامه: ${creditPaid.toLocaleString()} ج.م`);
+        }
+        db.prepare('UPDATE customers SET balance = balance - ? WHERE id = ?').run(creditPaid, finalCustomerId);
+      }
+
+      // Calculate collection fee based on payment method
+      let fee = 0;
+      if (actualPaymentMethod === 'visa') {
+        // رسم تحصيل 2% من قيمة المنتج / الفاتورة
+        fee = Math.round((total * 0.02) * 100) / 100;
+      } else if (actualPaymentMethod === 'instapay') {
+        // رسم تحصيل 1 جنيه في كل 1000 جنيه من قيمة المنتج
+        fee = Math.round(Math.max(1, (total / 1000) * 1) * 100) / 100;
+      } else if (actualPaymentMethod === 'wallet') {
+        // رسم تحصيل 1% في كل 1000 جنيه (1% من قيمة المنتج)
+        fee = Math.round((total * 0.01) * 100) / 100;
+      } else if (collection_fee !== undefined && collection_fee !== null && Number(collection_fee) > 0) {
+        fee = Number(collection_fee);
+      }
+
       const paid = (paid_amount !== undefined && paid_amount !== null && paid_amount !== '')
         ? Number(paid_amount)
         : (sale_type === 'installment' ? 0 : total);
-      const remaining = Math.max(0, total - paid);
+      const remaining = Math.max(0, total - (paid + creditPaid));
 
-      let finalPaid = paid;
+      let finalPaid = paid + creditPaid;
       let finalRemaining = remaining;
       let financeCompanyId = null;
       let financeCompanyName = null;
@@ -1044,15 +1173,15 @@ router.post('/sales', (req, res) => {
       let merchantFee = 0;
       let netPayout = 0;
 
-      if (sale_type === 'finance_company') {
+      if (sale_type === 'finance_company' || sale_type === 'bank') {
         financeCompanyId = req.body.finance_company_id || null;
         financeApproval = req.body.finance_approval_code || '';
         const comp = financeCompanyId ? db.prepare('SELECT * FROM finance_companies WHERE id = ?').get(financeCompanyId) : null;
-        financeCompanyName = comp ? comp.name : (req.body.finance_company_name || 'شركة تقسيط');
+        financeCompanyName = comp ? comp.name : (req.body.finance_company_name || (sale_type === 'bank' ? 'تقسيط بنكي' : 'شركة تمويل'));
         const feeRate = req.body.merchant_fee_rate !== undefined ? Number(req.body.merchant_fee_rate) : (comp ? comp.merchant_fee_rate : 0);
         merchantFee = Math.round(((total * feeRate) / 100) * 100) / 100;
         netPayout = total - merchantFee;
-        finalPaid = total; // Financed by the company
+        finalPaid = total; // Financed by partner
         finalRemaining = 0;
 
         // Credit to the partner bank account
@@ -1063,13 +1192,15 @@ router.post('/sales', (req, res) => {
       // 1. Create Sale Record
       const saleInfo = db.prepare(`
         INSERT INTO sales (
-          invoice_no, customer_id, branch_id, warehouse_id, sale_type, subtotal, discount, total,
-          paid_amount, remaining_amount, finance_company_id, finance_company_name,
-          finance_approval_code, merchant_fee, net_payout, installment_plan_name, installment_duration_months, status, notes
+          invoice_no, customer_id, branch_id, warehouse_id, sale_type, payment_method,
+          subtotal, discount, total, paid_amount, remaining_amount, collection_fee, paid_by_customer_credit,
+          finance_company_id, finance_company_name, finance_approval_code, merchant_fee, net_payout,
+          installment_plan_name, installment_duration_months, status, notes
         ) VALUES (
-          @invoice_no, @customer_id, @branch_id, @warehouse_id, @sale_type, @subtotal, @discount, @total,
-          @paid_amount, @remaining_amount, @finance_company_id, @finance_company_name,
-          @finance_approval_code, @merchant_fee, @net_payout, @installment_plan_name, @installment_duration_months, 'completed', @notes
+          @invoice_no, @customer_id, @branch_id, @warehouse_id, @sale_type, @payment_method,
+          @subtotal, @discount, @total, @paid_amount, @remaining_amount, @collection_fee, @paid_by_customer_credit,
+          @finance_company_id, @finance_company_name, @finance_approval_code, @merchant_fee, @net_payout,
+          @installment_plan_name, @installment_duration_months, 'completed', @notes
         )
       `).run({
         invoice_no: invoiceNo,
@@ -1077,11 +1208,14 @@ router.post('/sales', (req, res) => {
         branch_id: Number(req.body.branch_id) || 1,
         warehouse_id: Number(req.body.warehouse_id) || 1,
         sale_type: sale_type || 'cash',
+        payment_method: actualPaymentMethod,
         subtotal,
         discount: disc,
         total,
         paid_amount: finalPaid,
         remaining_amount: finalRemaining,
+        collection_fee: fee,
+        paid_by_customer_credit: creditPaid,
         finance_company_id: financeCompanyId,
         finance_company_name: financeCompanyName,
         finance_approval_code: financeApproval,
@@ -1094,12 +1228,34 @@ router.post('/sales', (req, res) => {
 
       const saleId = saleInfo.lastInsertRowid;
 
+      // Record customer transaction log if credit used
+      if (creditPaid > 0 && finalCustomerId) {
+        const afterBal = db.prepare('SELECT balance FROM customers WHERE id = ?').get(finalCustomerId)?.balance || 0;
+        db.prepare(`
+          INSERT INTO customer_transactions (customer_id, type, amount, description, ref_type, ref_id, balance_after)
+          VALUES (?, 'credit_payment', ?, ?, 'sale', ?, ?)
+        `).run(finalCustomerId, creditPaid, `سداد من رصيد العميل لفاتورة رقم ${invoiceNo}`, saleId, afterBal);
+      }
+
+      // If electronic collection fee exists, auto-record as expense (تخصم كمصروف)
+      if (fee > 0) {
+        const methodLabels = { visa: 'فيزا', instapay: 'إنستاباي', wallet: 'محفظة إلكترونية' };
+        db.prepare(`
+          INSERT INTO expenses (category, title, amount, notes, expense_date)
+          VALUES ('مصروفات بنكية وتحصيل', ?, ?, ?, DATE('now'))
+        `).run(
+          `رسم تحصيل ${methodLabels[actualPaymentMethod] || actualPaymentMethod} - فاتورة ${invoiceNo}`,
+          fee,
+          `خصم تلقائي لرسم تحصيل إلكتروني على فاتورة رقم ${invoiceNo}`
+        );
+      }
+
       // 2. Insert Sale Items and update Serial Numbers to 'sold'
+      let totalCostOfSoldItems = 0;
       for (const item of items) {
         const product = db.prepare('SELECT warranty_months FROM products WHERE id = ?').get(item.product_id);
         const warrantyMonths = product ? product.warranty_months : 12;
 
-        // Calculate warranty end date
         const startDate = getCairoDate();
         const warrantyDate = new Date();
         warrantyDate.setMonth(warrantyDate.getMonth() + warrantyMonths);
@@ -1112,9 +1268,9 @@ router.post('/sales', (req, res) => {
           const serialRecord = db.prepare('SELECT serial_number, cost_price FROM product_serials WHERE id = ?').get(item.serial_id);
           if (serialRecord) {
             serialNumber = serialRecord.serial_number;
-            serialCost = serialRecord.cost_price;
+            serialCost = serialRecord.cost_price || 0;
+            totalCostOfSoldItems += Number(serialCost) || 0;
 
-            // Mark serial as sold
             db.prepare(`
               UPDATE product_serials SET
                 status = 'sold',
@@ -1148,31 +1304,25 @@ router.post('/sales', (req, res) => {
         });
       }
 
-      // 3. Record Cash Inflow (Cash drawer records only physical cash payments)
-      if ((sale_type === 'cash' || !sale_type) && paid > 0) {
+      // 3. Record Cash Inflow (Cash drawer records only actual physical cash payments)
+      const physicalCashAmount = (actualPaymentMethod === 'cash')
+        ? Math.max(0, paid)
+        : (sale_type === 'installment')
+        ? Math.max(0, Number(installment_data?.down_payment || paid))
+        : (sale_type === 'finance_company' || sale_type === 'bank')
+        ? Math.max(0, Number(req.body.cash_down_payment || 0))
+        : 0;
+
+      if (physicalCashAmount > 0) {
         db.prepare(`
           INSERT INTO cash_box (type, category, amount, description, ref_type, ref_id)
-          VALUES ('in', 'مبيعات كاش', ?, ?, 'sale', ?)
+          VALUES ('in', ?, ?, 'sale', ?)
         `).run(
-          paid,
+          sale_type === 'installment' ? 'مقدم قسط' : 'مبيعات كاش',
+          physicalCashAmount,
           `فاتورة مبيعات نقدية رقم ${invoiceNo}`,
           saleId
         );
-      } else if (sale_type === 'installment' && paid > 0) {
-        db.prepare(`
-          INSERT INTO cash_box (type, category, amount, description, ref_type, ref_id)
-          VALUES ('in', 'مقدم قسط', ?, ?, 'sale', ?)
-        `).run(
-          paid,
-          `دفعة مقدمة نقدية لفاتورة تقسيط مباشر رقم ${invoiceNo}`,
-          saleId
-        );
-      } else if (sale_type === 'finance_company' && Number(req.body.cash_down_payment) > 0) {
-        const cDown = Number(req.body.cash_down_payment);
-        db.prepare(`
-          INSERT INTO cash_box (type, category, amount, description, ref_type, ref_id)
-          VALUES ('in', 'مقدم تقسيط ممول', ?, ?, 'sale', ?)
-        `).run(cDown, `مقدم نقدي لفاتورة تقسيط ممول رقم ${invoiceNo}`, saleId);
       }
 
       // 4. Handle Installment Plan if sale_type === 'installment'
@@ -1184,14 +1334,13 @@ router.post('/sales', (req, res) => {
         const downPayment = Number(installment_data.down_payment) || paid;
         const totalCash = Number(total);
         const financed = Math.max(0, totalCash - downPayment);
-        const profitRate = Number(installment_data.profit_rate) || 0; // e.g. 20%
+        const profitRate = Number(installment_data.profit_rate) || 0;
         const profitAmount = (financed * profitRate) / 100;
         const totalInstallment = financed + profitAmount;
         const count = Number(installment_data.installments_count) || 12;
         const monthlyAmount = Math.round((totalInstallment / count) * 100) / 100;
         const startDate = installment_data.start_date || getCairoDate();
 
-        // Guarantor check
         let guarantorId = installment_data.guarantor_id || null;
         if (!guarantorId && installment_data.guarantor_name) {
           const gInfo = db.prepare(`
@@ -1238,7 +1387,6 @@ router.post('/sales', (req, res) => {
 
         const planId = planInfo.lastInsertRowid;
 
-        // Generate Installment Schedule
         const insertPayment = db.prepare(`
           INSERT INTO installment_payments (
             installment_plan_id, installment_no, due_date, amount_due, amount_paid, status
@@ -1253,12 +1401,71 @@ router.post('/sales', (req, res) => {
         }
       }
 
+      // 5. Automatic Double-Entry Accounting Journal Entry
+      const jvLines = [];
+      if (physicalCashAmount > 0) {
+        jvLines.push({ account_code: '1101', debit: physicalCashAmount, credit: 0, description: `نقدية محصلة بالخزينة - فاتورة ${invoiceNo}` });
+      }
+      if (creditPaid > 0) {
+        jvLines.push({ account_code: '2102', debit: creditPaid, credit: 0, description: `سداد من رصيد العميل - فاتورة ${invoiceNo}` });
+      }
+      if (actualPaymentMethod === 'visa') {
+        const netVisa = total - fee;
+        jvLines.push({ account_code: '1102', debit: netVisa, credit: 0, description: `إيداع مبيعات فيزا بالبنك - فاتورة ${invoiceNo}` });
+      } else if (actualPaymentMethod === 'instapay' || actualPaymentMethod === 'wallet') {
+        const netDigital = total - fee;
+        jvLines.push({ account_code: '1103', debit: netDigital, credit: 0, description: `إيداع تحويل إلكتروني (${actualPaymentMethod}) - فاتورة ${invoiceNo}` });
+      } else if (sale_type === 'finance_company' || sale_type === 'bank') {
+        if (netPayout > 0) {
+          const targetAcc = (sale_type === 'bank') ? '1102' : '1104';
+          jvLines.push({ account_code: targetAcc, debit: netPayout, credit: 0, description: `مستحقات تمويل ${financeCompanyName} - فاتورة ${invoiceNo}` });
+        }
+        if (merchantFee > 0) {
+          jvLines.push({ account_code: '5103', debit: merchantFee, credit: 0, description: `عمولة شركة التمويل - فاتورة ${invoiceNo}` });
+        }
+      } else if (sale_type === 'installment') {
+        const financedTotal = (Number(installment_data?.financed_amount) || 0) + (Number(installment_data?.profit_amount) || 0);
+        if (financedTotal > 0) {
+          jvLines.push({ account_code: '1105', debit: financedTotal, credit: 0, description: `مدينو تقسيط وأوراق قبض - فاتورة ${invoiceNo}` });
+        }
+      }
+
+      if (fee > 0) {
+        jvLines.push({ account_code: '5102', debit: fee, credit: 0, description: `رسم تحصيل إلكتروني - فاتورة ${invoiceNo}` });
+      }
+
+      // Credit: Sales Revenues
+      if (sale_type === 'installment') {
+        jvLines.push({ account_code: '4101', debit: 0, credit: Number(total), description: `إيراد مبيعات أجهزة تقسيط - فاتورة ${invoiceNo}` });
+        if (Number(installment_data?.profit_amount) > 0) {
+          jvLines.push({ account_code: '4102', debit: 0, credit: Number(installment_data.profit_amount), description: `أرباح وفوائد تقسيط مباشر - فاتورة ${invoiceNo}` });
+        }
+      } else {
+        jvLines.push({ account_code: '4101', debit: 0, credit: Number(total), description: `إيراد مبيعات أجهزة - فاتورة ${invoiceNo}` });
+      }
+
+      // Cost of Goods Sold & Inventory
+      if (totalCostOfSoldItems > 0) {
+        jvLines.push({ account_code: '5101', debit: totalCostOfSoldItems, credit: 0, description: `تكلفة البضاعة المباعة - فاتورة ${invoiceNo}` });
+        jvLines.push({ account_code: '1106', debit: 0, credit: totalCostOfSoldItems, description: `صرف مخزون بضاعة - فاتورة ${invoiceNo}` });
+      }
+
+      createJournalEntry({
+        ref_type: 'sale',
+        ref_id: saleId,
+        description: `قيد مبيعات فاتورة ${invoiceNo} (${sale_type}/${actualPaymentMethod})`,
+        lines: jvLines,
+        created_by: req.body.sales_rep_name || 'الكاشير'
+      });
+
       return { 
         saleId, 
         invoiceNo,
         total,
         paidAmount: finalPaid,
-        remainingAmount: finalRemaining
+        remainingAmount: finalRemaining,
+        collectionFee: fee,
+        paymentMethod: actualPaymentMethod
       };
     });
 
@@ -1268,13 +1475,15 @@ router.post('/sales', (req, res) => {
       'SALE_CREATED', 
       'sale', 
       result.saleId, 
-      `إصدار فاتورة بيع جديدة برقم ${result.invoiceNo} - النوع: ${sale_type || 'cash'} - الإجمالي: ${result.total} ج.م`, 
+      `إصدار فاتورة بيع جديدة برقم ${result.invoiceNo} - النوع: ${sale_type || 'cash'} (${result.paymentMethod}) - الإجمالي: ${result.total} ج.م`, 
       {
         invoice_no: result.invoiceNo,
         sale_type: sale_type || 'cash',
+        payment_method: result.paymentMethod,
         total: result.total,
         paid_amount: result.paidAmount,
-        remaining_amount: result.remainingAmount
+        remaining_amount: result.remainingAmount,
+        collection_fee: result.collectionFee
       }
     );
     res.json({ success: true, ...result, message: 'تم إتمام عملية البيع وحفظ الفاتورة بنجاح' });
@@ -1804,6 +2013,89 @@ router.delete('/suppliers/:id', (req, res) => {
     db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
     logActivity(req, 'SUPPLIER_DELETED', 'supplier', req.params.id, `حذف المورد: ${s.name}`, s);
     res.json({ success: true, message: 'تم حذف المورد بنجاح' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Supplier Payment (سداد دفعة من الحساب أو تسوية كامل المديونية)
+router.post('/suppliers/:id/pay', (req, res) => {
+  try {
+    const supplierId = req.params.id;
+    const { amount, payment_type, payment_method, bank_account_id, receipt_no, notes, payment_date } = req.body;
+
+    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplierId);
+    if (!supplier) return res.status(404).json({ error: 'المورد غير موجود' });
+
+    const payAmount = Number(amount);
+    if (!payAmount || payAmount <= 0) {
+      return res.status(400).json({ error: 'يرجى إدخال مبلغ سداد صالح أكبر من صفر' });
+    }
+
+    const payDate = payment_date || getCairoDate();
+    const method = payment_method || 'cash';
+
+    const payTx = db.transaction(() => {
+      // 1. Deduct supplier balance
+      db.prepare('UPDATE suppliers SET balance = balance - ? WHERE id = ?').run(payAmount, supplierId);
+
+      // 2. Record in supplier_payments
+      const insertPay = db.prepare(`
+        INSERT INTO supplier_payments (supplier_id, amount, payment_type, payment_method, bank_account_id, receipt_no, notes, payment_date, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(supplierId, payAmount, payment_type || 'partial', method, bank_account_id || null, receipt_no || '', notes || '', payDate, req.body.created_by || 'الكاشير');
+
+      const paymentId = insertPay.lastInsertRowid;
+
+      // 3. Deduct from cashbox or bank account
+      if (method === 'cash') {
+        db.prepare(`
+          INSERT INTO cash_box (type, category, amount, description, ref_type, ref_id)
+          VALUES ('out', 'سداد موردين', ?, ?, 'supplier_payment', ?)
+        `).run(payAmount, `سداد دفعة للمورد: ${supplier.name} (${supplier.company || ''})`, paymentId);
+      } else if (method === 'bank' && bank_account_id) {
+        db.prepare('UPDATE bank_accounts SET balance = balance - ? WHERE id = ?').run(payAmount, bank_account_id);
+      }
+
+      // 4. Accounting Journal Entry (Dr. Suppliers 2101, Cr. Cash/Bank 1101/1102)
+      createJournalEntry({
+        ref_type: 'supplier_payment',
+        ref_id: paymentId,
+        entry_date: payDate,
+        description: `سداد مستحقات للمورد ${supplier.name} (${method === 'cash' ? 'خزينة نقدية' : 'حساب بنكي'})`,
+        lines: [
+          { account_code: '2101', debit: payAmount, credit: 0, description: `تخفيض مديونية المورد ${supplier.name}` },
+          { account_code: method === 'cash' ? '1101' : '1102', debit: 0, credit: payAmount, description: `صرف ${method === 'cash' ? 'نقدية من الخزينة' : 'من الحساب البنكي'}` }
+        ],
+        created_by: req.body.created_by || 'الكاشير'
+      });
+
+      const updatedSupplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplierId);
+      return { paymentId, newBalance: updatedSupplier.balance };
+    });
+
+    const result = payTx();
+    logActivity(req, 'SUPPLIER_PAYMENT', 'supplier', supplierId, `سداد دفعة للمورد ${supplier.name} بقيمة ${payAmount} ج.م`, req.body);
+    res.json({ 
+      success: true, 
+      ...result, 
+      message: `تم سداد مبلغ ${payAmount.toLocaleString()} ج.م للمورد بنجاح وتحديث الرصيد!` 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/suppliers/:id/payments', (req, res) => {
+  try {
+    const list = db.prepare(`
+      SELECT sp.*, ba.name as bank_account_name 
+      FROM supplier_payments sp
+      LEFT JOIN bank_accounts ba ON sp.bank_account_id = ba.id
+      WHERE sp.supplier_id = ?
+      ORDER BY sp.id DESC
+    `).all(req.params.id);
+    res.json(list);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4106,8 +4398,17 @@ router.post('/sales/:id/return', (req, res) => {
         }
       }
 
-      // 3. Financial refund deduction
-      if (refund_method === 'cash' && totalRefund > 0) {
+      // 3. Financial refund deduction or customer credit deposit
+      if ((refund_method === 'credit' || refund_method === 'balance') && totalRefund > 0) {
+        if (sale.customer_id) {
+          db.prepare('UPDATE customers SET balance = balance + ? WHERE id = ?').run(totalRefund, sale.customer_id);
+          const custRec = db.prepare('SELECT balance FROM customers WHERE id = ?').get(sale.customer_id);
+          db.prepare(`
+            INSERT INTO customer_transactions (customer_id, type, amount, description, ref_type, ref_id, balance_after)
+            VALUES (?, 'credit_deposit', ?, ?, 'sale_return', ?, ?)
+          `).run(sale.customer_id, totalRefund, `إيداع رصيد دائن من مرتجع فاتورة رقم ${sale.invoice_no}`, returnId, custRec?.balance || totalRefund);
+        }
+      } else if (refund_method === 'cash' && totalRefund > 0) {
         db.prepare(`
           INSERT INTO cash_box (type, category, amount, description, ref_type, ref_id)
           VALUES ('out', 'مرتجع مبيعات', ?, ?, 'sale_return', ?)
@@ -4122,11 +4423,43 @@ router.post('/sales/:id/return', (req, res) => {
         WHERE id = ?
       `).run(totalRefund, saleId);
 
-      return { returnId, returnNo };
+      // 5. Automatic Double-Entry Accounting Entry for Sales Return
+      let costOfRestocked = 0;
+      for (const it of items) {
+        if (it.serial_number) {
+          const s = db.prepare('SELECT cost_price FROM product_serials WHERE serial_number = ?').get(it.serial_number);
+          if (s) costOfRestocked += Number(s.cost_price) || 0;
+        }
+      }
+
+      const returnJvLines = [
+        { account_code: '5107', debit: totalRefund, credit: 0, description: `مرتجعات مبيعات - إشعار مرتجع ${returnNo}` }
+      ];
+
+      if (refund_method === 'credit' || refund_method === 'balance') {
+        returnJvLines.push({ account_code: '2102', debit: 0, credit: totalRefund, description: `إيداع برصيد العميل الدائن - مرتجع ${returnNo}` });
+      } else {
+        returnJvLines.push({ account_code: '1101', debit: 0, credit: totalRefund, description: `صرف نقدية من الخزينة لمرتجع ${returnNo}` });
+      }
+
+      if (costOfRestocked > 0) {
+        returnJvLines.push({ account_code: '1106', debit: costOfRestocked, credit: 0, description: `استرداد بضاعة للمخزون - مرتجع ${returnNo}` });
+        returnJvLines.push({ account_code: '5101', debit: 0, credit: costOfRestocked, description: `تخفيض تكلفة البضاعة المباعة - مرتجع ${returnNo}` });
+      }
+
+      createJournalEntry({
+        ref_type: 'return',
+        ref_id: returnId,
+        description: `قيد إشعار مرتجع مبيعات رقم ${returnNo} للفاتورة ${sale.invoice_no}`,
+        lines: returnJvLines,
+        created_by: processed_by || 'الكاشير'
+      });
+
+      return { returnId, returnNo, refundMethod: refund_method, refundAmount: totalRefund };
     });
 
     const result = returnTx();
-    logActivity(req, 'SALE_REFUND', 'sale', saleId, `تسجيل مرتجع للفاتورة ${sale.invoice_no} بقيمة ${refund_amount} ج.م`, result);
+    logActivity(req, 'SALE_REFUND', 'sale', saleId, `تسجيل مرتجع للفاتورة ${sale.invoice_no} بقيمة ${refund_amount} ج.م (${result.refundMethod})`, result);
 
     res.json({ success: true, ...result, message: 'تم تسجيل المرتجع واسترداد المبلغ وتحديث حالة الأجهزة بنجاح' });
   } catch (err) {
@@ -4556,7 +4889,8 @@ router.get('/reconciliation/daily', (req, res) => {
         c.name as customer_name, 
         c.phone as customer_phone,
         br.name as branch_name,
-        fc.name as partner_company_name
+        fc.name as partner_company_name,
+        fc.company_type as partner_company_type
       FROM sales s
       LEFT JOIN customers c ON s.customer_id = c.id
       LEFT JOIN branches br ON s.branch_id = br.id
@@ -4565,14 +4899,17 @@ router.get('/reconciliation/daily', (req, res) => {
       ORDER BY s.id DESC
     `).all(targetDate, ...branchParams);
 
-    // Group sales by payment method / sale_type
-    const cashSales = sales.filter(s => s.sale_type === 'cash');
-    const cardSales = sales.filter(s => s.sale_type === 'card');
-    const financeSales = sales.filter(s => s.sale_type === 'finance_company');
-    const transferSales = sales.filter(s => s.sale_type === 'transfer');
+    // Categorize sales
+    const pureCashSales = sales.filter(s => s.payment_method === 'cash' || (!s.payment_method && s.sale_type === 'cash'));
+    const visaSales = sales.filter(s => s.payment_method === 'visa' || (s.sale_type === 'card' && !s.payment_method));
+    const instapaySales = sales.filter(s => s.payment_method === 'instapay');
+    const walletSales = sales.filter(s => s.payment_method === 'wallet');
+    const customerCreditSales = sales.filter(s => Number(s.paid_by_customer_credit) > 0);
+    const bankSales = sales.filter(s => s.sale_type === 'bank' || (s.sale_type === 'finance_company' && s.partner_company_type === 'bank'));
+    const financeCompanySales = sales.filter(s => s.sale_type === 'finance_company' && s.partner_company_type !== 'bank');
     const installmentSales = sales.filter(s => s.sale_type === 'installment');
 
-    // 2. Installments payments collected on target date
+    // 2. Installments collections on target date
     const installmentPayments = db.prepare(`
       SELECT 
         ip.*,
@@ -4588,21 +4925,47 @@ router.get('/reconciliation/daily', (req, res) => {
       ORDER BY ip.id DESC
     `).all(targetDate);
 
-    // 3. Expenses and cash out movements on target date
+    // 3. Returns on target date
+    const returnsList = db.prepare(`
+      SELECT 
+        r.*,
+        s.invoice_no,
+        s.branch_id,
+        c.name as customer_name
+      FROM returns r
+      JOIN sales s ON r.sale_id = s.id
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE DATE(r.created_at) = DATE(?)
+      ORDER BY r.id DESC
+    `).all(targetDate);
+
+    // 4. Supplier payments on target date
+    const supplierPaymentsList = db.prepare(`
+      SELECT 
+        sp.*,
+        sup.name as supplier_name,
+        ba.name as bank_account_name
+      FROM supplier_payments sp
+      JOIN suppliers sup ON sp.supplier_id = sup.id
+      LEFT JOIN bank_accounts ba ON sp.bank_account_id = ba.id
+      WHERE DATE(sp.payment_date) = DATE(?)
+      ORDER BY sp.id DESC
+    `).all(targetDate);
+
+    // 5. Cash expenses & manual inflows
     const cashExpenses = db.prepare(`
       SELECT * FROM cash_box 
       WHERE type = 'out' AND DATE(created_at) = DATE(?)
       ORDER BY id DESC
     `).all(targetDate);
 
-    // 4. Other cash inflows on target date
     const manualCashInflows = db.prepare(`
       SELECT * FROM cash_box 
       WHERE type = 'in' AND ref_type != 'sale' AND ref_type != 'installment' AND DATE(created_at) = DATE(?)
       ORDER BY id DESC
     `).all(targetDate);
 
-    // 5. Fund transfers executed on target date
+    // 6. Bank Transfers
     const bankTransfers = db.prepare(`
       SELECT ft.*, f_acc.name as from_acc_name, t_acc.name as to_acc_name
       FROM fund_transfers ft
@@ -4612,7 +4975,7 @@ router.get('/reconciliation/daily', (req, res) => {
       ORDER BY ft.id DESC
     `).all(targetDate);
 
-    // 6. Active or closed cashier shifts on target date
+    // 7. Shifts
     const shifts = db.prepare(`
       SELECT cs.*, b.name as branch_name 
       FROM cashier_shifts cs
@@ -4621,30 +4984,77 @@ router.get('/reconciliation/daily', (req, res) => {
       ORDER BY cs.id DESC
     `).all(targetDate, targetDate);
 
-    // 7. Aggregate Metrics
-    const totalCashSalesPaid = cashSales.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0);
-    const totalInstallmentDownPayments = installmentSales.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0);
+    // 8. Accurate Aggregations
+    // Cash Drawer IN
+    const totalPureCashSales = pureCashSales.reduce((sum, s) => {
+      const netPhysical = (Number(s.paid_amount) || 0) - (Number(s.paid_by_customer_credit) || 0);
+      return sum + Math.max(0, netPhysical);
+    }, 0);
+
+    const totalInstallmentDownPaymentsCash = installmentSales.reduce((sum, s) => {
+      const netPhysical = (Number(s.paid_amount) || 0) - (Number(s.paid_by_customer_credit) || 0);
+      return sum + Math.max(0, netPhysical);
+    }, 0);
+
     const totalInstallmentsCashCollected = installmentPayments
       .filter(p => p.payment_method === 'cash' || !p.payment_method)
       .reduce((sum, p) => sum + (Number(p.amount_paid) || 0), 0);
-    const totalInstallmentsNonCash = installmentPayments
+
+    const totalInstallmentsDigitalCollected = installmentPayments
       .filter(p => p.payment_method && p.payment_method !== 'cash')
       .reduce((sum, p) => sum + (Number(p.amount_paid) || 0), 0);
 
     const totalManualCashIn = manualCashInflows.reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
+
+    const totalDrawerCashIn = totalPureCashSales + totalInstallmentDownPaymentsCash + totalInstallmentsCashCollected + totalManualCashIn;
+
+    // Cash Drawer OUT
     const totalCashExpenses = cashExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const totalSupplierCashPaid = supplierPaymentsList
+      .filter(sp => sp.payment_method === 'cash')
+      .reduce((sum, sp) => sum + (Number(sp.amount) || 0), 0);
+    const totalSupplierBankPaid = supplierPaymentsList
+      .filter(sp => sp.payment_method !== 'cash')
+      .reduce((sum, sp) => sum + (Number(sp.amount) || 0), 0);
 
-    // Total Cash Collected into the Drawer today
-    const totalCashInflowToday = totalCashSalesPaid + totalInstallmentDownPayments + totalInstallmentsCashCollected + totalManualCashIn;
-    const netCashChangeToday = totalCashInflowToday - totalCashExpenses;
+    const totalReturnsCashRefund = returnsList
+      .filter(r => r.refund_method === 'cash' || !r.refund_method)
+      .reduce((sum, r) => sum + (Number(r.refund_amount) || 0), 0);
+    const totalReturnsCreditRefund = returnsList
+      .filter(r => r.refund_method === 'credit')
+      .reduce((sum, r) => sum + (Number(r.refund_amount) || 0), 0);
 
-    // Card (POS) Machine Metrics
-    const totalCardSales = cardSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const totalDrawerCashOut = totalCashExpenses + totalSupplierCashPaid + totalReturnsCashRefund;
+    const netCashDrawerFlow = totalDrawerCashIn - totalDrawerCashOut;
 
-    // Consumer Finance Companies (valU, Contact, etc.) Detailed Grouping
+    // Digital Channels Breakdown
+    // Visa
+    const visaGross = visaSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const visaFees = visaSales.reduce((sum, s) => sum + (Number(s.collection_fee) || 0), 0);
+    const visaNet = visaGross - visaFees;
+
+    // InstaPay
+    const instapayGross = instapaySales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const instapayFees = instapaySales.reduce((sum, s) => sum + (Number(s.collection_fee) || 0), 0);
+    const instapayNet = instapayGross - instapayFees;
+
+    // E-Wallets
+    const walletGross = walletSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const walletFees = walletSales.reduce((sum, s) => sum + (Number(s.collection_fee) || 0), 0);
+    const walletNet = walletGross - walletFees;
+
+    // Customer Credit Used
+    const totalCustomerCreditUsed = sales.reduce((sum, s) => sum + (Number(s.paid_by_customer_credit) || 0), 0);
+
+    // Banks
+    const bankGross = bankSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const bankFees = bankSales.reduce((sum, s) => sum + (Number(s.merchant_fee) || 0), 0);
+    const bankNet = bankGross - bankFees;
+
+    // Finance Companies Detailed Grouping
     const financeCompaniesSummary = {};
-    financeSales.forEach(s => {
-      const compName = s.finance_company_name || s.partner_company_name || 'جهة تمويل أخرى';
+    financeCompanySales.forEach(s => {
+      const compName = s.finance_company_name || s.partner_company_name || 'شركة تمويل أخرى';
       if (!financeCompaniesSummary[compName]) {
         financeCompaniesSummary[compName] = {
           company_name: compName,
@@ -4658,7 +5068,7 @@ router.get('/reconciliation/daily', (req, res) => {
       financeCompaniesSummary[compName].count += 1;
       financeCompaniesSummary[compName].gross_amount += (Number(s.total) || 0);
       financeCompaniesSummary[compName].merchant_fees += (Number(s.merchant_fee) || 0);
-      financeCompaniesSummary[compName].net_payout += (Number(s.net_payout) || 0);
+      financeCompaniesSummary[compName].net_payout += (Number(s.net_payout) || (Number(s.total) - Number(s.merchant_fee || 0)));
       financeCompaniesSummary[compName].transactions.push({
         id: s.id,
         invoice_no: s.invoice_no,
@@ -4671,70 +5081,123 @@ router.get('/reconciliation/daily', (req, res) => {
       });
     });
 
-    const totalFinanceGross = financeSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
-    const totalFinanceFees = financeSales.reduce((sum, s) => sum + (Number(s.merchant_fee) || 0), 0);
-    const totalFinanceNetPayout = financeSales.reduce((sum, s) => sum + (Number(s.net_payout) || 0), 0);
+    const totalFinanceGross = financeCompanySales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const totalFinanceFees = financeCompanySales.reduce((sum, s) => sum + (Number(s.merchant_fee) || 0), 0);
+    const totalFinanceNetPayout = totalFinanceGross - totalFinanceFees;
 
-    // Bank Transfers / InstaPay
-    const totalTransferSales = transferSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const totalGrossRevenue = sales.reduce((sum, s) => sum + (Number(s.total) || 0), 0) + (totalInstallmentsCashCollected + totalInstallmentsDigitalCollected);
 
-    // Gross Business Turnover today
-    const totalGrossRevenue = sales.reduce((sum, s) => sum + (Number(s.total) || 0), 0) + (totalInstallmentsCashCollected + totalInstallmentsNonCash);
+    const cashDrawerObj = {
+      pure_cash_sales: Math.round(totalPureCashSales * 100) / 100,
+      installment_down_payments: Math.round(totalInstallmentDownPaymentsCash * 100) / 100,
+      installments_collected: Math.round(totalInstallmentsCashCollected * 100) / 100,
+      manual_inflows: Math.round(totalManualCashIn * 100) / 100,
+      total_cash_in: Math.round(totalDrawerCashIn * 100) / 100,
+
+      cash_expenses: Math.round(totalCashExpenses * 100) / 100,
+      supplier_cash_paid: Math.round(totalSupplierCashPaid * 100) / 100,
+      returns_cash_refund: Math.round(totalReturnsCashRefund * 100) / 100,
+      total_cash_out: Math.round(totalDrawerCashOut * 100) / 100,
+
+      net_cash_drawer_flow: Math.round(netCashDrawerFlow * 100) / 100
+    };
 
     res.json({
       targetDate,
       summary: {
         total_invoices_count: sales.length,
-        total_gross_revenue: totalGrossRevenue,
-        
-        // Cash Channel
-        cash: {
-          sales_paid: totalCashSalesPaid,
-          installment_down_payments: totalInstallmentDownPayments,
-          installments_collected: totalInstallmentsCashCollected,
-          manual_inflows: totalManualCashIn,
-          total_cash_in: totalCashInflowToday,
-          total_cash_out: totalCashExpenses,
-          net_cash_drawer_flow: netCashChangeToday
-        },
+        total_gross_revenue: Math.round(totalGrossRevenue * 100) / 100,
 
-        // POS Cards Channel
+        // Drawer Cash Movement
+        cash_drawer: cashDrawerObj,
+        cash: cashDrawerObj,
+
+        // Electronic & Digital Methods
         cards: {
-          count: cardSales.length,
-          total_amount: totalCardSales
+          count: visaSales.length,
+          total_amount: Math.round(visaGross * 100) / 100
         },
-
-        // Consumer Finance Channel
-        finance_companies: {
-          count: financeSales.length,
-          gross_amount: totalFinanceGross,
-          total_merchant_fees: totalFinanceFees,
-          net_store_payout: totalFinanceNetPayout,
-          companies: Object.values(financeCompaniesSummary)
-        },
-
-        // Bank / Wallet Transfers
         transfers: {
-          count: transferSales.length,
-          total_amount: totalTransferSales
+          count: instapaySales.length + walletSales.length,
+          total_amount: Math.round((instapayGross + walletGross) * 100) / 100
+        },
+        visa: {
+          count: visaSales.length,
+          gross: Math.round(visaGross * 100) / 100,
+          fees: Math.round(visaFees * 100) / 100,
+          net: Math.round(visaNet * 100) / 100
+        },
+        instapay: {
+          count: instapaySales.length,
+          gross: Math.round(instapayGross * 100) / 100,
+          fees: Math.round(instapayFees * 100) / 100,
+          net: Math.round(instapayNet * 100) / 100
+        },
+        wallet: {
+          count: walletSales.length,
+          gross: Math.round(walletGross * 100) / 100,
+          fees: Math.round(walletFees * 100) / 100,
+          net: Math.round(walletNet * 100) / 100
+        },
+        customer_credit: {
+          count: customerCreditSales.length,
+          total_amount: Math.round(totalCustomerCreditUsed * 100) / 100
+        },
+
+        // Banks Financing
+        banks: {
+          count: bankSales.length,
+          gross: Math.round(bankGross * 100) / 100,
+          fees: Math.round(bankFees * 100) / 100,
+          net: Math.round(bankNet * 100) / 100
+        },
+
+        // Consumer Finance Companies
+        finance_companies: {
+          count: financeCompanySales.length,
+          gross: Math.round(totalFinanceGross * 100) / 100,
+          fees: Math.round(totalFinanceFees * 100) / 100,
+          net: Math.round(totalFinanceNetPayout * 100) / 100,
+          companies: Object.values(financeCompaniesSummary)
         },
 
         // Installment Collections
         installments: {
           count: installmentPayments.length,
-          cash: totalInstallmentsCashCollected,
-          non_cash: totalInstallmentsNonCash,
-          total: totalInstallmentsCashCollected + totalInstallmentsNonCash
+          cash: Math.round(totalInstallmentsCashCollected * 100) / 100,
+          digital: Math.round(totalInstallmentsDigitalCollected * 100) / 100,
+          total: Math.round((totalInstallmentsCashCollected + totalInstallmentsDigitalCollected) * 100) / 100
+        },
+
+        // Returns
+        returns: {
+          count: returnsList.length,
+          cash_refunds: Math.round(totalReturnsCashRefund * 100) / 100,
+          credit_refunds: Math.round(totalReturnsCreditRefund * 100) / 100,
+          total: Math.round((totalReturnsCashRefund + totalReturnsCreditRefund) * 100) / 100
+        },
+
+        // Supplier Payments
+        supplier_payments: {
+          count: supplierPaymentsList.length,
+          cash_paid: Math.round(totalSupplierCashPaid * 100) / 100,
+          bank_paid: Math.round(totalSupplierBankPaid * 100) / 100,
+          total: Math.round((totalSupplierCashPaid + totalSupplierBankPaid) * 100) / 100
         }
       },
       itemized: {
         sales,
-        cashSales,
-        cardSales,
-        financeSales,
-        transferSales,
+        pureCashSales,
+        visaSales,
+        instapaySales,
+        walletSales,
+        customerCreditSales,
+        bankSales,
+        financeCompanySales,
         installmentSales,
         installmentPayments,
+        returnsList,
+        supplierPaymentsList,
         cashExpenses,
         manualCashInflows,
         bankTransfers,
@@ -4880,5 +5343,549 @@ router.delete('/notifications/clear-read', (req, res) => {
   }
 });
 
+// ==========================================
+// 37. FULL ACCOUNTING SYSTEM (النظام المحاسبي المتكامل)
+// ==========================================
+
+router.get('/accounting/accounts', (req, res) => {
+  try {
+    const accounts = db.prepare(`
+      SELECT 
+        a.*,
+        p.name as parent_name,
+        COALESCE(SUM(jl.debit), 0) as total_debit,
+        COALESCE(SUM(jl.credit), 0) as total_credit
+      FROM accounts a
+      LEFT JOIN accounts p ON a.parent_id = p.id
+      LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+      LEFT JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted'
+      GROUP BY a.id
+      ORDER BY a.code ASC
+    `).all();
+
+    const formatted = accounts.map(acc => {
+      let current_balance = 0;
+      if (acc.type === 'asset' || acc.type === 'expense') {
+        current_balance = (acc.total_debit - acc.total_credit);
+      } else {
+        current_balance = (acc.total_credit - acc.total_debit);
+      }
+      return {
+        ...acc,
+        current_balance: Math.round(current_balance * 100) / 100
+      };
+    });
+
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/accounts', (req, res) => {
+  try {
+    const { code, name, type, parent_id, description } = req.body;
+    if (!code || !name || !type) {
+      return res.status(400).json({ error: 'كود الحساب واسمه ونوعه حقول مطلوبة' });
+    }
+    const existing = db.prepare('SELECT id FROM accounts WHERE code = ?').get(code);
+    if (existing) {
+      return res.status(400).json({ error: 'كود الحساب موجود مسبقاً' });
+    }
+
+    const info = db.prepare(`
+      INSERT INTO accounts (code, name, type, parent_id, is_leaf, description)
+      VALUES (?, ?, ?, ?, 1, ?)
+    `).run(code, name, type, parent_id || null, description || '');
+
+    res.json({ id: info.lastInsertRowid, success: true, message: 'تم إنشاء الحساب بنجاح' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/entries', (req, res) => {
+  try {
+    const { from_date, to_date, ref_type, search, limit = 100 } = req.query;
+    let query = `SELECT je.* FROM journal_entries je WHERE 1=1`;
+    const params = [];
+
+    if (from_date) {
+      query += ` AND DATE(je.entry_date) >= DATE(?)`;
+      params.push(from_date);
+    }
+    if (to_date) {
+      query += ` AND DATE(je.entry_date) <= DATE(?)`;
+      params.push(to_date);
+    }
+    if (ref_type) {
+      query += ` AND je.ref_type = ?`;
+      params.push(ref_type);
+    }
+    if (search) {
+      query += ` AND (je.entry_no LIKE ? OR je.description LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    query += ` ORDER BY je.id DESC LIMIT ?`;
+    params.push(Number(limit));
+
+    const entries = db.prepare(query).all(...params);
+
+    const getLines = db.prepare(`
+      SELECT jl.*, a.code as account_code, a.name as account_name, a.type as account_type
+      FROM journal_entry_lines jl
+      JOIN accounts a ON jl.account_id = a.id
+      WHERE jl.entry_id = ?
+      ORDER BY jl.id ASC
+    `);
+
+    const result = entries.map(entry => {
+      const lines = getLines.all(entry.id);
+      const total_debit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
+      const total_credit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+      return {
+        ...entry,
+        lines,
+        total_debit: Math.round(total_debit * 100) / 100,
+        total_credit: Math.round(total_credit * 100) / 100
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/entries', (req, res) => {
+  try {
+    const { entry_date, ref_type, description, created_by, lines } = req.body;
+    if (!description || !lines || lines.length < 2) {
+      return res.status(400).json({ error: 'الرجاء إدخال وصف القيد وطرفين على الأقل (مدين ودائن)' });
+    }
+
+    let sumDebit = 0;
+    let sumCredit = 0;
+    for (const l of lines) {
+      sumDebit += Number(l.debit) || 0;
+      sumCredit += Number(l.credit) || 0;
+    }
+
+    if (Math.abs(sumDebit - sumCredit) > 0.05) {
+      return res.status(400).json({ 
+        error: `القيد غير متوازن! إجمالي المدين: ${sumDebit.toFixed(2)} - إجمالي الدائن: ${sumCredit.toFixed(2)}` 
+      });
+    }
+
+    const entryId = createJournalEntry({
+      ref_type: ref_type || 'manual',
+      description,
+      lines,
+      entry_date: entry_date || getCairoDate(),
+      created_by: created_by || 'محاسب عام'
+    });
+
+    if (!entryId) {
+      return res.status(500).json({ error: 'فشل في حفظ القيد اليومي' });
+    }
+
+    res.json({ success: true, entry_id: entryId, message: 'تم حفظ القيد المحاسبي بنجاح' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/ledger', (req, res) => {
+  try {
+    const { account_id, account_code, from_date, to_date } = req.query;
+    let targetAccount = null;
+    if (account_id) {
+      targetAccount = db.prepare('SELECT * FROM accounts WHERE id = ?').get(account_id);
+    } else if (account_code) {
+      targetAccount = db.prepare('SELECT * FROM accounts WHERE code = ?').get(account_code);
+    }
+
+    if (!targetAccount) {
+      return res.status(404).json({ error: 'الحساب غير موجود' });
+    }
+
+    // Opening balance before from_date
+    let openingDebit = 0;
+    let openingCredit = 0;
+    if (from_date) {
+      const priorTotals = db.prepare(`
+        SELECT COALESCE(SUM(jl.debit), 0) as total_debit, COALESCE(SUM(jl.credit), 0) as total_credit
+        FROM journal_entry_lines jl
+        JOIN journal_entries je ON jl.entry_id = je.id
+        WHERE jl.account_id = ? AND je.status = 'posted' AND DATE(je.entry_date) < DATE(?)
+      `).get(targetAccount.id, from_date);
+      openingDebit = priorTotals.total_debit;
+      openingCredit = priorTotals.total_credit;
+    }
+
+    let openingBalance = 0;
+    if (targetAccount.type === 'asset' || targetAccount.type === 'expense') {
+      openingBalance = openingDebit - openingCredit;
+    } else {
+      openingBalance = openingCredit - openingDebit;
+    }
+
+    // Lines in period
+    let query = `
+      SELECT 
+        jl.*,
+        je.entry_no,
+        je.entry_date,
+        je.ref_type,
+        je.ref_id,
+        je.description as entry_desc
+      FROM journal_entry_lines jl
+      JOIN journal_entries je ON jl.entry_id = je.id
+      WHERE jl.account_id = ? AND je.status = 'posted'
+    `;
+    const params = [targetAccount.id];
+
+    if (from_date) {
+      query += ` AND DATE(je.entry_date) >= DATE(?)`;
+      params.push(from_date);
+    }
+    if (to_date) {
+      query += ` AND DATE(je.entry_date) <= DATE(?)`;
+      params.push(to_date);
+    }
+
+    query += ` ORDER BY je.entry_date ASC, jl.id ASC`;
+
+    const lines = db.prepare(query).all(...params);
+
+    let running = openingBalance;
+    const ledgerLines = lines.map(line => {
+      const d = Number(line.debit) || 0;
+      const c = Number(line.credit) || 0;
+      if (targetAccount.type === 'asset' || targetAccount.type === 'expense') {
+        running += (d - c);
+      } else {
+        running += (c - d);
+      }
+      return {
+        ...line,
+        running_balance: Math.round(running * 100) / 100
+      };
+    });
+
+    const periodDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+    const periodCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+
+    res.json({
+      account: targetAccount,
+      from_date: from_date || null,
+      to_date: to_date || null,
+      opening_balance: Math.round(openingBalance * 100) / 100,
+      period_debit: Math.round(periodDebit * 100) / 100,
+      period_credit: Math.round(periodCredit * 100) / 100,
+      closing_balance: Math.round(running * 100) / 100,
+      lines: ledgerLines
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/trial-balance', (req, res) => {
+  try {
+    const { from_date, to_date } = req.query;
+
+    const accounts = db.prepare('SELECT * FROM accounts ORDER BY code ASC').all();
+
+    let totalOpeningDebit = 0;
+    let totalOpeningCredit = 0;
+    let totalPeriodDebit = 0;
+    let totalPeriodCredit = 0;
+    let totalEndingDebit = 0;
+    let totalEndingCredit = 0;
+
+    const rows = accounts.map(acc => {
+      // Opening
+      let openingDebit = 0;
+      let openingCredit = 0;
+      if (from_date) {
+        const prior = db.prepare(`
+          SELECT COALESCE(SUM(jl.debit), 0) as d, COALESCE(SUM(jl.credit), 0) as c
+          FROM journal_entry_lines jl
+          JOIN journal_entries je ON jl.entry_id = je.id
+          WHERE jl.account_id = ? AND je.status = 'posted' AND DATE(je.entry_date) < DATE(?)
+        `).get(acc.id, from_date);
+        openingDebit = prior.d;
+        openingCredit = prior.c;
+      }
+
+      // Period
+      let periodQuery = `
+        SELECT COALESCE(SUM(jl.debit), 0) as d, COALESCE(SUM(jl.credit), 0) as c
+        FROM journal_entry_lines jl
+        JOIN journal_entries je ON jl.entry_id = je.id
+        WHERE jl.account_id = ? AND je.status = 'posted'
+      `;
+      const periodParams = [acc.id];
+      if (from_date) {
+        periodQuery += ` AND DATE(je.entry_date) >= DATE(?)`;
+        periodParams.push(from_date);
+      }
+      if (to_date) {
+        periodQuery += ` AND DATE(je.entry_date) <= DATE(?)`;
+        periodParams.push(to_date);
+      }
+
+      const period = db.prepare(periodQuery).get(...periodParams);
+      const pDebit = period.d;
+      const pCredit = period.c;
+
+      // Cumulative ending
+      const netTotalDebit = openingDebit + pDebit;
+      const netTotalCredit = openingCredit + pCredit;
+      let endDebit = 0;
+      let endCredit = 0;
+
+      if (netTotalDebit >= netTotalCredit) {
+        endDebit = netTotalDebit - netTotalCredit;
+      } else {
+        endCredit = netTotalCredit - netTotalDebit;
+      }
+
+      totalOpeningDebit += openingDebit;
+      totalOpeningCredit += openingCredit;
+      totalPeriodDebit += pDebit;
+      totalPeriodCredit += pCredit;
+      totalEndingDebit += endDebit;
+      totalEndingCredit += endCredit;
+
+      return {
+        id: acc.id,
+        code: acc.code,
+        name: acc.name,
+        type: acc.type,
+        opening_debit: Math.round(openingDebit * 100) / 100,
+        opening_credit: Math.round(openingCredit * 100) / 100,
+        period_debit: Math.round(pDebit * 100) / 100,
+        period_credit: Math.round(pCredit * 100) / 100,
+        ending_debit: Math.round(endDebit * 100) / 100,
+        ending_credit: Math.round(endCredit * 100) / 100
+      };
+    });
+
+    res.json({
+      from_date: from_date || null,
+      to_date: to_date || null,
+      rows: rows.filter(r => r.period_debit > 0 || r.period_credit > 0 || r.ending_debit > 0 || r.ending_credit > 0),
+      totals: {
+        opening_debit: Math.round(totalOpeningDebit * 100) / 100,
+        opening_credit: Math.round(totalOpeningCredit * 100) / 100,
+        period_debit: Math.round(totalPeriodDebit * 100) / 100,
+        period_credit: Math.round(totalPeriodCredit * 100) / 100,
+        ending_debit: Math.round(totalEndingDebit * 100) / 100,
+        ending_credit: Math.round(totalEndingCredit * 100) / 100
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/income-statement', (req, res) => {
+  try {
+    const { from_date, to_date } = req.query;
+
+    let dateFilter = '';
+    const params = [];
+    if (from_date) {
+      dateFilter += ` AND DATE(je.entry_date) >= DATE(?)`;
+      params.push(from_date);
+    }
+    if (to_date) {
+      dateFilter += ` AND DATE(je.entry_date) <= DATE(?)`;
+      params.push(to_date);
+    }
+
+    // Revenues (type = 'revenue')
+    const revenues = db.prepare(`
+      SELECT a.id, a.code, a.name,
+        COALESCE(SUM(jl.credit - jl.debit), 0) as balance
+      FROM accounts a
+      LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+      LEFT JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' ${dateFilter}
+      WHERE a.type = 'revenue'
+      GROUP BY a.id
+      ORDER BY a.code ASC
+    `).all(...params);
+
+    // Expenses (type = 'expense')
+    const expenses = db.prepare(`
+      SELECT a.id, a.code, a.name,
+        COALESCE(SUM(jl.debit - jl.credit), 0) as balance
+      FROM accounts a
+      LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+      LEFT JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' ${dateFilter}
+      WHERE a.type = 'expense'
+      GROUP BY a.id
+      ORDER BY a.code ASC
+    `).all(...params);
+
+    const cogs = expenses.filter(e => e.code.startsWith('5101'));
+    const operatingExpenses = expenses.filter(e => !e.code.startsWith('5101'));
+
+    const totalRevenues = revenues.reduce((s, r) => s + (Number(r.balance) || 0), 0);
+    const totalCogs = cogs.reduce((s, c) => s + (Number(c.balance) || 0), 0);
+    const grossProfit = totalRevenues - totalCogs;
+    const totalOperatingExpenses = operatingExpenses.reduce((s, o) => s + (Number(o.balance) || 0), 0);
+    const netIncome = grossProfit - totalOperatingExpenses;
+
+    res.json({
+      from_date: from_date || null,
+      to_date: to_date || null,
+      revenues: revenues.filter(r => r.balance !== 0),
+      total_revenues: Math.round(totalRevenues * 100) / 100,
+      cogs: cogs.filter(c => c.balance !== 0),
+      total_cogs: Math.round(totalCogs * 100) / 100,
+      gross_profit: Math.round(grossProfit * 100) / 100,
+      operating_expenses: operatingExpenses.filter(e => e.balance !== 0),
+      total_operating_expenses: Math.round(totalOperatingExpenses * 100) / 100,
+      net_income: Math.round(netIncome * 100) / 100
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/balance-sheet', (req, res) => {
+  try {
+    const { as_of_date } = req.query;
+    const targetDate = as_of_date || getCairoDate();
+
+    // Assets
+    const assets = db.prepare(`
+      SELECT a.id, a.code, a.name,
+        COALESCE(SUM(jl.debit - jl.credit), 0) as balance
+      FROM accounts a
+      LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+      LEFT JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' AND DATE(je.entry_date) <= DATE(?)
+      WHERE a.type = 'asset'
+      GROUP BY a.id
+      ORDER BY a.code ASC
+    `).all(targetDate);
+
+    // Liabilities
+    const liabilities = db.prepare(`
+      SELECT a.id, a.code, a.name,
+        COALESCE(SUM(jl.credit - jl.debit), 0) as balance
+      FROM accounts a
+      LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+      LEFT JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' AND DATE(je.entry_date) <= DATE(?)
+      WHERE a.type = 'liability'
+      GROUP BY a.id
+      ORDER BY a.code ASC
+    `).all(targetDate);
+
+    // Equity
+    const equity = db.prepare(`
+      SELECT a.id, a.code, a.name,
+        COALESCE(SUM(jl.credit - jl.debit), 0) as balance
+      FROM accounts a
+      LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+      LEFT JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' AND DATE(je.entry_date) <= DATE(?)
+      WHERE a.type = 'equity'
+      GROUP BY a.id
+      ORDER BY a.code ASC
+    `).all(targetDate);
+
+    // Current Year/Period Net Profit calculation
+    const revTotal = db.prepare(`
+      SELECT COALESCE(SUM(jl.credit - jl.debit), 0) as rev
+      FROM accounts a
+      JOIN journal_entry_lines jl ON a.id = jl.account_id
+      JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' AND DATE(je.entry_date) <= DATE(?)
+      WHERE a.type = 'revenue'
+    `).get(targetDate)?.rev || 0;
+
+    const expTotal = db.prepare(`
+      SELECT COALESCE(SUM(jl.debit - jl.credit), 0) as exp
+      FROM accounts a
+      JOIN journal_entry_lines jl ON a.id = jl.account_id
+      JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' AND DATE(je.entry_date) <= DATE(?)
+      WHERE a.type = 'expense'
+    `).get(targetDate)?.exp || 0;
+
+    const periodProfit = revTotal - expTotal;
+
+    const totalAssets = assets.reduce((s, a) => s + (Number(a.balance) || 0), 0);
+    const totalLiabilities = liabilities.reduce((s, l) => s + (Number(l.balance) || 0), 0);
+    const baseEquity = equity.reduce((s, e) => s + (Number(e.balance) || 0), 0);
+    const totalEquity = baseEquity + periodProfit;
+
+    res.json({
+      as_of_date: targetDate,
+      assets: assets.filter(a => a.balance !== 0),
+      total_assets: Math.round(totalAssets * 100) / 100,
+      liabilities: liabilities.filter(l => l.balance !== 0),
+      total_liabilities: Math.round(totalLiabilities * 100) / 100,
+      equity: equity.filter(e => e.balance !== 0),
+      current_period_profit: Math.round(periodProfit * 100) / 100,
+      total_equity: Math.round(totalEquity * 100) / 100,
+      total_liabilities_and_equity: Math.round((totalLiabilities + totalEquity) * 100) / 100,
+      is_balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.05
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/dashboard', (req, res) => {
+  try {
+    const today = getCairoDate();
+    const startOfMonth = today.slice(0, 7) + '-01';
+
+    const mtdRev = db.prepare(`
+      SELECT COALESCE(SUM(jl.credit - jl.debit), 0) as rev
+      FROM accounts a
+      JOIN journal_entry_lines jl ON a.id = jl.account_id
+      JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' AND DATE(je.entry_date) >= DATE(?)
+      WHERE a.type = 'revenue'
+    `).get(startOfMonth)?.rev || 0;
+
+    const mtdExp = db.prepare(`
+      SELECT COALESCE(SUM(jl.debit - jl.credit), 0) as exp
+      FROM accounts a
+      JOIN journal_entry_lines jl ON a.id = jl.account_id
+      JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted' AND DATE(je.entry_date) >= DATE(?)
+      WHERE a.type = 'expense'
+    `).get(startOfMonth)?.exp || 0;
+
+    const entriesCount = db.prepare('SELECT COUNT(*) as c FROM journal_entries').get()?.c || 0;
+    const accountsCount = db.prepare('SELECT COUNT(*) as c FROM accounts').get()?.c || 0;
+
+    // Liquid cash & bank balances
+    const cashAndBanks = db.prepare(`
+      SELECT a.code, a.name, COALESCE(SUM(jl.debit - jl.credit), 0) as balance
+      FROM accounts a
+      LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+      LEFT JOIN journal_entries je ON jl.entry_id = je.id AND je.status = 'posted'
+      WHERE a.code IN ('1101', '1102', '1103', '1104')
+      GROUP BY a.id
+    `).all();
+
+    res.json({
+      mtd_revenue: Math.round(mtdRev * 100) / 100,
+      mtd_expenses: Math.round(mtdExp * 100) / 100,
+      mtd_net_profit: Math.round((mtdRev - mtdExp) * 100) / 100,
+      total_entries: entriesCount,
+      total_accounts: accountsCount,
+      liquid_funds: cashAndBanks
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
+
 

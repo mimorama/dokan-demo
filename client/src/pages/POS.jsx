@@ -27,9 +27,18 @@ import {
   Camera,
   Image as ImageIcon,
   Eye,
-  Clock
+  Clock,
+  Printer,
+  Edit,
+  Landmark,
+  Smartphone,
+  DollarSign,
+  Wallet,
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { api } from '../api';
+import ContractPrint from '../components/ContractPrint';
 
 export default function POS({ onSaleCompleted, settings, currentUser }) {
   const [products, setProducts] = useState([]);
@@ -51,8 +60,35 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
 
   // Cart: Array of items { product, serial_id, serial_number, unit_price, availableSerials: [] }
   const [cart, setCart] = useState([]);
-  const [saleType, setSaleType] = useState('cash'); // 'cash', 'installment', 'finance_company'
+  const [saleType, setSaleType] = useState('cash'); // 'cash', 'bank', 'finance_company', 'installment'
+  const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'visa', 'instapay', 'wallet'
   const [discount, setDiscount] = useState(0);
+
+  // Customer Credit / Balance Usage (المرتجعات السابقة)
+  const [useCustomerCredit, setUseCustomerCredit] = useState(false);
+  const [paidFromCredit, setPaidFromCredit] = useState(0);
+
+  // Quick Customer Edit Modal
+  const [showCustomerEditModal, setShowCustomerEditModal] = useState(false);
+  const [customerEditData, setCustomerEditData] = useState({
+    name: '',
+    phone: '',
+    phone2: '',
+    national_id: '',
+    address: '',
+    workplace: '',
+    notes: '',
+    guarantor_name: '',
+    guarantor_phone: '',
+    guarantor_national_id: '',
+    guarantor_relation: 'أخ'
+  });
+  const [savingCustomerEdit, setSavingCustomerEdit] = useState(false);
+
+  // Direct Installment Contract Approval Gate (طباعة العقد + الموافقة الإلزامية)
+  const [showContractApprovalModal, setShowContractApprovalModal] = useState(false);
+  const [contractPrinted, setContractPrinted] = useState(false);
+  const [showDraftPrintModal, setShowDraftPrintModal] = useState(false);
 
   // Customer Form & Mobile Lookup
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
@@ -370,14 +406,50 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
         ? item.product.installment_price
         : item.product.cash_price
     })));
+
+    if (type === 'bank') {
+      const bList = financeCompanies.filter(c => c.company_type === 'bank' || c.name.includes('بنك') || c.name.includes('أهلي') || c.name.includes('مصر') || c.name.includes('CIB') || c.name.includes('QNB'));
+      if (bList.length > 0) {
+        setSelectedCompanyId(bList[0].id);
+        if (bList[0].plans && bList[0].plans.length > 0) setSelectedPlanId(bList[0].plans[0].id);
+      }
+    } else if (type === 'finance_company') {
+      const fList = financeCompanies.filter(c => c.company_type !== 'bank' && !c.name.includes('بنك'));
+      if (fList.length > 0) {
+        setSelectedCompanyId(fList[0].id);
+        if (fList[0].plans && fList[0].plans.length > 0) setSelectedPlanId(fList[0].plans[0].id);
+      }
+    }
   };
 
   // Financial calculations
   const subtotal = cart.reduce((sum, item) => sum + (Number(item.unit_price) || 0), 0);
   const total = Math.max(0, subtotal - Number(discount || 0));
 
-  // Consumer Finance Calculations (valU / Contact / Banks)
-  const currentFinanceCompany = financeCompanies.find(c => c.id === Number(selectedCompanyId));
+  // Instant payment collection fee calculation (visa 2%, instapay 1 EGP / 1000 EGP, wallet 1%)
+  let collectionFee = 0;
+  if (saleType === 'cash') {
+    if (paymentMethod === 'visa') {
+      collectionFee = Math.round(total * 0.02 * 100) / 100;
+    } else if (paymentMethod === 'instapay') {
+      collectionFee = Math.round(Math.max(1, (total / 1000) * 1) * 100) / 100;
+    } else if (paymentMethod === 'wallet') {
+      collectionFee = Math.round((total * 0.01) * 100) / 100;
+    }
+  }
+
+  // Customer Credit / Balance Deduction (from past returns)
+  const customerMaxCredit = Number(selectedCustomerObj?.balance || 0);
+  const effectiveCreditPaid = useCustomerCredit ? Math.min(customerMaxCredit, Math.min(total, Number(paidFromCredit) || 0)) : 0;
+  const netDueAfterCredit = Math.max(0, total - effectiveCreditPaid);
+
+  // Banks vs Consumer Finance Companies Filtering
+  const bankCompanies = financeCompanies.filter(c => c.company_type === 'bank' || c.name.includes('بنك') || c.name.includes('أهلي') || c.name.includes('مصر') || c.name.includes('CIB') || c.name.includes('QNB'));
+  const consumerFinanceCompanies = financeCompanies.filter(c => c.company_type !== 'bank' && !c.name.includes('بنك'));
+  const activeCompaniesList = saleType === 'bank' ? bankCompanies : consumerFinanceCompanies;
+
+  // Active Company and Plans
+  const currentFinanceCompany = activeCompaniesList.find(c => c.id === Number(selectedCompanyId)) || activeCompaniesList[0] || null;
   const currentPlans = currentFinanceCompany?.plans || [];
   const selectedPlan = currentPlans.find(p => p.id === Number(selectedPlanId)) || currentPlans[0] || null;
 
@@ -403,7 +475,7 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
 
   const handleCompanyChange = (companyId) => {
     setSelectedCompanyId(companyId);
-    const comp = financeCompanies.find(c => c.id === Number(companyId));
+    const comp = activeCompaniesList.find(c => c.id === Number(companyId));
     if (comp && comp.plans && comp.plans.length > 0) {
       setSelectedPlanId(comp.plans[0].id);
     } else {
@@ -417,6 +489,9 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
     try {
       const payload = {
         sale_type: saleType,
+        payment_method: saleType === 'cash' ? paymentMethod : saleType,
+        collection_fee: collectionFee,
+        paid_by_customer_credit: effectiveCreditPaid,
         customer_id: selectedCustomerId || null,
         branch_id: Number(selectedBranchId) || 1,
         warehouse_id: Number(selectedWarehouseId) || 1,
@@ -439,16 +514,16 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
       };
 
       if (saleType === 'cash') {
-        payload.paid_amount = total;
-      } else if (saleType === 'finance_company') {
-        payload.finance_company_id = Number(selectedCompanyId);
-        payload.finance_company_name = currentFinanceCompany?.name || 'شركة تقسيط';
+        payload.paid_amount = netDueAfterCredit;
+      } else if (saleType === 'finance_company' || saleType === 'bank') {
+        payload.finance_company_id = Number(currentFinanceCompany?.id || selectedCompanyId);
+        payload.finance_company_name = currentFinanceCompany?.name || (saleType === 'bank' ? 'بنك' : 'شركة تقسيط');
         payload.finance_approval_code = approvalCode;
         payload.merchant_fee_rate = feeRate;
         payload.cash_down_payment = cashDownPaymentVal;
         payload.installment_plan_name = selectedPlan 
           ? `${currentFinanceCompany?.name || 'تمويل'} - ${selectedPlan.name} (${planDuration} شهر)`
-          : (currentFinanceCompany?.name || 'تقسيط بنكي / شركات');
+          : (currentFinanceCompany?.name || (saleType === 'bank' ? 'تقسيط بنكي' : 'شركات تمويل'));
         payload.installment_duration_months = planDuration;
       } else if (saleType === 'installment') {
         payload.paid_amount = downPaymentVal;
@@ -480,7 +555,7 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
     }
   };
 
-  // Submit Sale with Manager Override Check
+  // Submit Sale with Manager Override & Contract Approval Checks
   const handleSubmitSale = async () => {
     setErrorMsg('');
 
@@ -489,9 +564,9 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
       return;
     }
 
-    if (saleType === 'finance_company') {
-      if (!selectedCompanyId) {
-        setErrorMsg('الرجاء اختيار شركة التمويل أو البنك (مثل فاليو أو كونتاكت)');
+    if (saleType === 'finance_company' || saleType === 'bank') {
+      if (!currentFinanceCompany && !selectedCompanyId) {
+        setErrorMsg(saleType === 'bank' ? 'الرجاء اختيار البنك الممول' : 'الرجاء اختيار شركة التمويل (مثل فاليو أو كونتاكت)');
         return;
       }
       if (!approvalCode) {
@@ -531,6 +606,13 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
       return;
     }
 
+    // 3. Direct Installment Contract Printing & Final Approval Gate (Requirement 9)
+    if (saleType === 'installment') {
+      setContractPrinted(false);
+      setShowContractApprovalModal(true);
+      return;
+    }
+
     executeSaleSubmission();
   };
 
@@ -544,6 +626,91 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
     setShowPinModal(false);
     setPinInput('');
     executeSaleSubmission();
+  };
+
+  const handleSaveCustomerEdit = async (e) => {
+    e?.preventDefault();
+    if (!customerEditData.name || !customerEditData.phone) {
+      alert('الرجاء كتابة اسم العميل ورقم الهاتف على الأقل');
+      return;
+    }
+    setSavingCustomerEdit(true);
+    try {
+      if (selectedCustomerId) {
+        await api.updateCustomer(selectedCustomerId, customerEditData);
+        setCustomerName(customerEditData.name);
+        setCustomerPhone(customerEditData.phone);
+        setCustomerPhone2(customerEditData.phone2 || '');
+        setCustomerNationalId(customerEditData.national_id || '');
+        setCustomerAddress(customerEditData.address || '');
+        if (customerEditData.guarantor_name) {
+          setGuarantorName(customerEditData.guarantor_name);
+          setGuarantorPhone(customerEditData.guarantor_phone || '');
+          setGuarantorNationalId(customerEditData.guarantor_national_id || '');
+          setGuarantorRelation(customerEditData.guarantor_relation || 'أخ');
+        }
+        const custs = await api.lookupCustomers(customerEditData.phone);
+        const updated = custs.find(c => c.id === selectedCustomerId);
+        if (updated) setSelectedCustomerObj(updated);
+      } else {
+        const res = await api.createCustomer(customerEditData);
+        setSelectedCustomerId(res.id);
+        setCustomerName(customerEditData.name);
+        setCustomerPhone(customerEditData.phone);
+        setCustomerPhone2(customerEditData.phone2 || '');
+        setCustomerNationalId(customerEditData.national_id || '');
+        setCustomerAddress(customerEditData.address || '');
+        if (customerEditData.guarantor_name) {
+          setGuarantorName(customerEditData.guarantor_name);
+          setGuarantorPhone(customerEditData.guarantor_phone || '');
+          setGuarantorNationalId(customerEditData.guarantor_national_id || '');
+          setGuarantorRelation(customerEditData.guarantor_relation || 'أخ');
+        }
+        const custs = await api.lookupCustomers(customerEditData.phone);
+        const updated = custs.find(c => c.id === res.id) || res;
+        setSelectedCustomerObj(updated);
+      }
+      setShowCustomerEditModal(false);
+      alert('تم تحديث وحفظ بيانات العميل بنجاح!');
+    } catch (err) {
+      alert('خطأ أثناء حفظ بيانات العميل: ' + (err.message || 'حدث خطأ غير متوقع'));
+    } finally {
+      setSavingCustomerEdit(false);
+    }
+  };
+
+  const draftPlan = {
+    id: 'DRAFT',
+    invoice_no: 'مسودة عقد تقسيط مباشر',
+    sale_date: new Date().toISOString().slice(0, 10),
+    start_date: startDate,
+    customer_name: customerName,
+    customer_national_id: customerNationalId,
+    customer_phone: customerPhone,
+    customer_address: customerAddress,
+    customer_workplace: selectedCustomerObj?.workplace || '',
+    guarantor_name: guarantorName,
+    guarantor_phone: guarantorPhone,
+    guarantor_national_id: guarantorNationalId,
+    guarantor_relation: guarantorRelation,
+    items: cart.map(i => ({
+      name: i.product.name,
+      model: i.product.model_number,
+      serial_number: i.serial_number,
+      unit_price: i.unit_price,
+      warranty_months: i.product.warranty_months || 12,
+      warranty_agency: i.product.warranty_agency || 'الوكيل الرسمي'
+    })),
+    total_cash_price: total,
+    down_payment: downPaymentVal,
+    financed_amount: financedAmount,
+    profit_rate: Number(profitRate),
+    profit_amount: profitAmount,
+    total_installment_amount: totalInstallmentAmount,
+    total_amount: totalInstallmentAmount,
+    installments_count: Number(installmentsCount),
+    monthly_amount: monthlyAmount,
+    remaining_balance: totalInstallmentAmount
   };
 
   return (
@@ -746,37 +913,121 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
 
       {/* Cart & Invoicing Panel (5 Cols) */}
       <div className="xl:col-span-5 bg-white rounded-2xl border border-slate-200/80 shadow-md p-5 sticky top-24 space-y-4">
-        {/* 3-Mode Sale Selector */}
+        {/* 4-Mode Sale Selector (Requirement 1) */}
         <div>
           <span className="block text-[11px] font-bold text-slate-500 mb-1.5">نوع الفاتورة وطريقة البيع:</span>
-          <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold text-center">
+          <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold text-center">
             <button
+              type="button"
               onClick={() => handleSaleTypeChange('cash')}
-              className={`py-2 rounded-lg transition-all cursor-pointer ${
-                saleType === 'cash' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`py-2 rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                saleType === 'cash' ? 'bg-white text-emerald-700 shadow-xs border border-emerald-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              💵 كاش فوري
+              <span>💵 دفع فوري</span>
             </button>
 
             <button
+              type="button"
+              onClick={() => handleSaleTypeChange('bank')}
+              className={`py-2 rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                saleType === 'bank' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>🏛️ البنوك</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => handleSaleTypeChange('finance_company')}
-              className={`py-2 rounded-lg transition-all cursor-pointer ${
+              className={`py-2 rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 saleType === 'finance_company' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              🏢 فاليو / بنوك
+              <span>🏢 شركات التمويل</span>
             </button>
 
             <button
+              type="button"
               onClick={() => handleSaleTypeChange('installment')}
-              className={`py-2 rounded-lg transition-all cursor-pointer ${
+              className={`py-2 rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 saleType === 'installment' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              📑 تقسيط مباشر
+              <span>📑 تقسيط مباشر</span>
             </button>
           </div>
+
+          {/* Instant Payment Methods Breakdown (Requirement 2) */}
+          {saleType === 'cash' && (
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-2 mt-2">
+              <span className="text-[11px] font-bold text-slate-600 block">طريقة التحصيل والوسيلة الإلكترونية:</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('cash')}
+                  className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    paymentMethod === 'cash'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="block text-sm mb-0.5">💵</span>
+                  <span>نقدي</span>
+                  <span className="block text-[9px] opacity-80 mt-0.5">بدون رسوم</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('visa')}
+                  className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    paymentMethod === 'visa'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="block text-sm mb-0.5">💳</span>
+                  <span>فيزا POS</span>
+                  <span className="block text-[9px] opacity-80 mt-0.5">رسم 2% مصروف</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('instapay')}
+                  className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    paymentMethod === 'instapay'
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="block text-sm mb-0.5">⚡</span>
+                  <span>إنستاباي</span>
+                  <span className="block text-[9px] opacity-80 mt-0.5">1 ج / 1000 ج</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('wallet')}
+                  className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    paymentMethod === 'wallet'
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="block text-sm mb-0.5">📱</span>
+                  <span>محفظة ذكية</span>
+                  <span className="block text-[9px] opacity-80 mt-0.5">رسم 1% مصروف</span>
+                </button>
+              </div>
+
+              {collectionFee > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center justify-between text-[11px] font-bold text-amber-900">
+                  <span>رسم التحصيل الإلكتروني المخصوم (كمصروف):</span>
+                  <span className="font-mono text-rose-600 font-extrabold" dir="ltr">-{collectionFee.toLocaleString()} {currency}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Cart Items List */}
@@ -849,29 +1100,39 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
           )}
         </div>
 
-        {/* Consumer Finance (valU / Contact / Bank Installments) Details */}
-        {saleType === 'finance_company' && (
-          <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 text-xs space-y-3">
+        {/* Bank & Consumer Finance Details (Requirements 1 & 2) */}
+        {(saleType === 'finance_company' || saleType === 'bank') && (
+          <div className={`border rounded-2xl p-4 text-xs space-y-3 ${
+            saleType === 'bank' ? 'bg-blue-50/70 border-blue-200' : 'bg-indigo-50/70 border-indigo-200'
+          }`}>
             <div className="flex items-center justify-between">
-              <span className="font-extrabold text-indigo-950 flex items-center gap-1.5">
-                <CreditCard className="w-4 h-4 text-indigo-600" />
-                بيانات تقسيط الشركات والبنوك
+              <span className={`font-extrabold flex items-center gap-1.5 ${
+                saleType === 'bank' ? 'text-blue-950' : 'text-indigo-950'
+              }`}>
+                {saleType === 'bank' ? <Landmark className="w-4 h-4 text-blue-600" /> : <CreditCard className="w-4 h-4 text-indigo-600" />}
+                {saleType === 'bank' ? 'بيانات التقسيط البنكي المعتمد' : 'بيانات تقسيط شركات التمويل (فاليو / كونتاكت / أمان)'}
               </span>
-              <span className="text-[10px] bg-indigo-200 text-indigo-900 font-bold px-2 py-0.5 rounded">
-                BNPL الممول
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                saleType === 'bank' ? 'bg-blue-200 text-blue-900' : 'bg-indigo-200 text-indigo-900'
+              }`}>
+                {saleType === 'bank' ? 'تمويل بنكي' : 'BNPL تمويل شركات'}
               </span>
             </div>
 
             <div>
-              <label className="block text-slate-600 font-bold mb-1">الشركة الممولة / البنك *</label>
+              <label className="block text-slate-600 font-bold mb-1">
+                {saleType === 'bank' ? 'البنك الممول *' : 'شركة التمويل *'}
+              </label>
               <select
                 value={selectedCompanyId}
                 onChange={(e) => handleCompanyChange(e.target.value)}
-                className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 font-bold text-indigo-950 focus:outline-none"
+                className={`w-full bg-white border rounded-xl px-3 py-2 font-bold focus:outline-none ${
+                  saleType === 'bank' ? 'border-blue-200 text-blue-950' : 'border-indigo-200 text-indigo-950'
+                }`}
               >
-                {financeCompanies.map((c) => (
+                {activeCompaniesList.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} {c.plans?.length ? `(${c.plans.length} خطط مدة وتقسيط)` : `(عمولة التاجر: ${c.merchant_fee_rate}%)`}
+                    {c.name} {c.plans?.length ? `(${c.plans.length} خطط تقسيط)` : `(عمولة التاجر: ${c.merchant_fee_rate}%)`}
                   </option>
                 ))}
               </select>
@@ -914,7 +1175,7 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
                   placeholder="0"
                   value={cashDownPayment}
                   onChange={(e) => setCashDownPayment(e.target.value)}
-                  className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 font-mono font-bold text-slate-900 focus:outline-none"
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-slate-900 focus:outline-none"
                 />
               </div>
 
@@ -923,16 +1184,16 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
                 <input
                   type="text"
                   required
-                  placeholder="مثال: VALU-994120"
+                  placeholder={saleType === 'bank' ? 'مثال: POS-B-8831' : 'مثال: VALU-994120'}
                   value={approvalCode}
                   onChange={(e) => setApprovalCode(e.target.value)}
-                  className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   dir="ltr"
                 />
               </div>
             </div>
 
-            <div className="bg-white p-3 rounded-xl border border-indigo-200 space-y-1.5">
+            <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
               <div className="flex justify-between text-slate-600">
                 <span>إجمالي الفاتورة:</span>
                 <span className="font-bold">{total.toLocaleString()} {currency}</span>
@@ -957,9 +1218,9 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
                 <span>عمولة التاجر المستقطعة ({feeRate}%):</span>
                 <span>-{merchantFeeAmount.toLocaleString()} {currency}</span>
               </div>
-              <div className="flex justify-between font-black text-indigo-950 border-t border-slate-100 pt-1.5">
+              <div className="flex justify-between font-black text-slate-900 border-t border-slate-100 pt-1.5">
                 <span>الصافي المودع لحساب المعرض:</span>
-                <span className="text-sm font-mono" dir="ltr">{netStorePayout.toLocaleString()} {currency}</span>
+                <span className="text-sm font-mono text-blue-800" dir="ltr">{netStorePayout.toLocaleString()} {currency}</span>
               </div>
             </div>
           </div>
@@ -1115,14 +1376,85 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleClearCustomer}
-                  className="text-[11px] text-rose-600 hover:text-rose-800 hover:bg-rose-100 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer"
-                >
-                  تغيير العميل
-                </button>
+                <div className="flex flex-col gap-1 items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerEditData({
+                        name: customerName,
+                        phone: customerPhone,
+                        phone2: customerPhone2,
+                        national_id: customerNationalId,
+                        address: customerAddress,
+                        workplace: selectedCustomerObj?.workplace || '',
+                        notes: selectedCustomerObj?.notes || '',
+                        guarantor_name: guarantorName,
+                        guarantor_phone: guarantorPhone,
+                        guarantor_national_id: guarantorNationalId,
+                        guarantor_relation: guarantorRelation
+                      });
+                      setShowCustomerEditModal(true);
+                    }}
+                    className="text-[11px] text-blue-700 hover:text-blue-900 bg-blue-100/80 hover:bg-blue-200/80 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                    <span>تعديل بيانات العميل</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearCustomer}
+                    className="text-[10px] text-rose-600 hover:text-rose-800 hover:bg-rose-100 px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer"
+                  >
+                    تغيير العميل
+                  </button>
+                </div>
               </div>
+
+              {/* Customer Balance Credit Card (Requirement 4) */}
+              {selectedCustomerObj && Number(selectedCustomerObj.balance) > 0 && (
+                <div className="bg-emerald-50/90 border border-emerald-300 rounded-xl p-3 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-black text-emerald-950">
+                      <Wallet className="w-4 h-4 text-emerald-600" />
+                      <span>رصيد متاح في حساب العميل:</span>
+                      <span className="font-mono text-emerald-700 font-extrabold" dir="ltr">{Number(selectedCustomerObj.balance).toLocaleString()} {currency}</span>
+                    </div>
+                    <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-900 text-[11px]">
+                      <input
+                        type="checkbox"
+                        checked={useCustomerCredit}
+                        onChange={(e) => {
+                          setUseCustomerCredit(e.target.checked);
+                          if (e.target.checked) {
+                            setPaidFromCredit(Math.min(selectedCustomerObj.balance, total));
+                          } else {
+                            setPaidFromCredit(0);
+                          }
+                        }}
+                        className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span>استخدام الرصيد في السداد</span>
+                    </label>
+                  </div>
+
+                  {useCustomerCredit && (
+                    <div className="flex items-center justify-between pt-1 border-t border-emerald-200">
+                      <span className="text-slate-600 font-bold text-[11px]">المبلغ المخصوم من رصيد العميل:</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max={Math.min(selectedCustomerObj.balance, total)}
+                          value={paidFromCredit}
+                          onChange={(e) => setPaidFromCredit(Math.min(selectedCustomerObj.balance, Math.min(total, Number(e.target.value) || 0)))}
+                          className="w-24 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-center font-mono font-bold text-emerald-800 text-xs"
+                        />
+                        <span className="font-bold text-emerald-900">{currency}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {selectedCustomerObj?.is_blacklisted && (
                 <div className="p-2.5 rounded-xl bg-rose-100 border border-rose-300 text-rose-900 text-xs font-bold flex items-center gap-2">
@@ -1324,9 +1656,23 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
             />
           </div>
 
+          {effectiveCreditPaid > 0 && (
+            <div className="flex justify-between text-emerald-800 font-bold bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-300">
+              <span>✓ خصم من رصيد المرتجعات:</span>
+              <span dir="ltr">-{effectiveCreditPaid.toLocaleString()} {currency}</span>
+            </div>
+          )}
+
+          {saleType === 'cash' && collectionFee > 0 && (
+            <div className="flex justify-between text-amber-900 font-semibold bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-300 text-[11px]">
+              <span>رسوم تحصيل إلكتروني (تخصم كمصروف):</span>
+              <span dir="ltr">+{collectionFee.toLocaleString()} {currency}</span>
+            </div>
+          )}
+
           <div className="flex justify-between text-sm font-black text-slate-900 border-t border-slate-200 pt-2">
-            <span>الصافي المطلوب:</span>
-            <span className="text-blue-700" dir="ltr">{total.toLocaleString()} {currency}</span>
+            <span>الصافي المطلوب تحصيله:</span>
+            <span className="text-blue-700 text-base" dir="ltr">{netDueAfterCredit.toLocaleString()} {currency}</span>
           </div>
         </div>
 
@@ -1422,6 +1768,329 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
           </form>
         </div>
       </div>
+    )}
+
+    {/* Quick Customer Edit Modal (Requirement 7) */}
+    {showCustomerEditModal && (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 text-slate-800 text-xs">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                <Edit className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-sm text-slate-900">
+                  {selectedCustomerId ? 'تعديل وتحديث بيانات العميل' : 'تسجيل بيانات عميل جديد'}
+                </h4>
+                <p className="text-[11px] text-slate-500">حفظ فوري دون مغادرة شاشة إصدار الفاتورة</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowCustomerEditModal(false)}
+              className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveCustomerEdit} className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">اسم العميل *</label>
+                <input
+                  type="text"
+                  required
+                  value={customerEditData.name}
+                  onChange={(e) => setCustomerEditData({ ...customerEditData, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">رقم الموبايل الأساسي *</label>
+                <input
+                  type="text"
+                  required
+                  dir="ltr"
+                  value={customerEditData.phone}
+                  onChange={(e) => setCustomerEditData({ ...customerEditData, phone: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold font-mono focus:border-blue-600 focus:outline-none text-right"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">رقم هاتف إضافي</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={customerEditData.phone2 || ''}
+                  onChange={(e) => setCustomerEditData({ ...customerEditData, phone2: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-right"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">الرقم القومي (14 رقم)</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  maxLength={14}
+                  value={customerEditData.national_id || ''}
+                  onChange={(e) => setCustomerEditData({ ...customerEditData, national_id: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-right"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">العنوان بالتفصيل</label>
+              <input
+                type="text"
+                value={customerEditData.address || ''}
+                onChange={(e) => setCustomerEditData({ ...customerEditData, address: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                placeholder="المحافظة - المركز - الشارع - رقم العقار"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">جهة العمل أو الوظيفة</label>
+                <input
+                  type="text"
+                  value={customerEditData.workplace || ''}
+                  onChange={(e) => setCustomerEditData({ ...customerEditData, workplace: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">ملاحظات عن العميل</label>
+                <input
+                  type="text"
+                  value={customerEditData.notes || ''}
+                  onChange={(e) => setCustomerEditData({ ...customerEditData, notes: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2 mt-2">
+              <span className="font-extrabold text-slate-800 block text-xs">بيانات الضامن المتضامن (للتقسيط المباشر):</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-0.5">اسم الضامن</label>
+                  <input
+                    type="text"
+                    value={customerEditData.guarantor_name || ''}
+                    onChange={(e) => setCustomerEditData({ ...customerEditData, guarantor_name: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-0.5">رقم هاتف الضامن</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={customerEditData.guarantor_phone || ''}
+                    onChange={(e) => setCustomerEditData({ ...customerEditData, guarantor_phone: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-right"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-0.5">قومي الضامن</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    maxLength={14}
+                    value={customerEditData.guarantor_national_id || ''}
+                    onChange={(e) => setCustomerEditData({ ...customerEditData, guarantor_national_id: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-right"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-0.5">صلة القرابة</label>
+                  <select
+                    value={customerEditData.guarantor_relation || 'أخ'}
+                    onChange={(e) => setCustomerEditData({ ...customerEditData, guarantor_relation: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 font-bold"
+                  >
+                    <option value="أب">أب</option>
+                    <option value="أم">أم</option>
+                    <option value="أخ">أخ</option>
+                    <option value="أخت">أخت</option>
+                    <option value="زوج">زوج / زوجة</option>
+                    <option value="ابن">ابن / ابنة</option>
+                    <option value="قريب">قريب / نسيب</option>
+                    <option value="صديق / زميل عمل">صديق / زميل عمل</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowCustomerEditModal(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                disabled={savingCustomerEdit}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer transition shadow-md"
+              >
+                {savingCustomerEdit ? 'جاري الحفظ...' : 'حفظ بيانات العميل'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+
+    {/* Direct Installment Contract Printing & Mandatory Approval Gate (Requirement 9) */}
+    {showContractApprovalModal && (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 text-slate-800 text-xs">
+          {/* Header */}
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-200 mb-4">
+            <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-base text-slate-900">
+                إجراءات إتمام عقد التقسيط المباشر وإيصالات الأمانة
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                المرحلة الإلزامية: طباعة مسودة العقد والموافقة القانونية قبل الحفظ النهائي
+              </p>
+            </div>
+          </div>
+
+          {/* Contract Summary Box */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 mb-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-200 text-xs">
+              <span className="font-extrabold text-slate-800">العميل (المشتري): {customerName}</span>
+              <span className="font-mono text-slate-500" dir="ltr">{customerPhone}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+              <div>
+                <span className="text-slate-400 block">إجمالي كاش:</span>
+                <span className="font-bold text-slate-800" dir="ltr">{total.toLocaleString()} {currency}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">المقدم المسدد:</span>
+                <span className="font-bold text-emerald-700" dir="ltr">{downPaymentVal.toLocaleString()} {currency}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">المبلغ المقسط:</span>
+                <span className="font-bold text-blue-700" dir="ltr">{financedAmount.toLocaleString()} {currency}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">نسبة الفائدة:</span>
+                <span className="font-bold text-slate-800">{profitRate}%</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">عدد الشهور:</span>
+                <span className="font-bold text-slate-800">{installmentsCount} شهر</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">القسط الشهري:</span>
+                <span className="font-black text-rose-700 text-xs" dir="ltr">{monthlyAmount.toLocaleString()} {currency}</span>
+              </div>
+            </div>
+            {guarantorName && (
+              <div className="pt-2 border-t border-slate-200 text-[11px] flex justify-between">
+                <span className="text-slate-500">الضامن المتضامن: <strong className="text-slate-800">{guarantorName}</strong> ({guarantorRelation})</span>
+                <span className="font-mono text-slate-600" dir="ltr">{guarantorPhone}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Action Step 1: Print Contract */}
+          <div className="mb-5 bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+            <div>
+              <span className="font-extrabold text-blue-900 block text-xs">
+                {contractPrinted ? '✓ تم فتح / طباعة مسودة العقد' : 'الخطوة الأولى: طباعة مسودة العقد وإيصالات الأمانة'}
+              </span>
+              <span className="text-[11px] text-blue-700 block mt-0.5">
+                يجب طباعة العقد ومراجعته وتوقيعه من العميل والضامن قبل الاعتماد
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowDraftPrintModal(true);
+                setContractPrinted(true);
+              }}
+              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-black text-xs transition-all shadow-md cursor-pointer whitespace-nowrap ${
+                contractPrinted
+                  ? 'bg-blue-700 hover:bg-blue-800 text-white'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white animate-pulse'
+              }`}
+            >
+              <Printer className="w-4 h-4" />
+              <span>{contractPrinted ? 'إعادة طباعة العقد' : 'طباعة مسودة العقد الآن'}</span>
+            </button>
+          </div>
+
+          {/* Action Step 2: Confirmation Prompt */}
+          <div className="border-t border-slate-200 pt-4 space-y-3">
+            <div className="bg-amber-50 border border-amber-300 p-3 rounded-xl text-center">
+              <p className="font-black text-slate-900 text-xs mb-1">
+                هل تم الانتهاء من الموافقة على شروط عقد التقسيط والتوقيع على إيصالات الأمانة بالكامل؟
+              </p>
+              <p className="text-[11px] text-slate-500">
+                في حالة اختيار (نعم) سيتم خصم الأجهزة من المخزن واعتماد الفاتورة نهائياً. في حالة (لا) سيتم إلغاء الإتمام والاحتفاظ بالفاتورة.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContractApprovalModal(false);
+                }}
+                className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 font-bold border border-slate-200 hover:border-rose-300 transition cursor-pointer text-center"
+              >
+                لا - لم تتم الموافقة (إلغاء إتمام العملية)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!contractPrinted) {
+                    alert('تنبيه: يجب أولاً الضغط على زر (طباعة مسودة العقد الآن) لمراجعته مع العميل قبل التأكيد.');
+                    return;
+                  }
+                  setShowContractApprovalModal(false);
+                  executeSaleSubmission();
+                }}
+                className={`flex-1 py-3 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  contractPrinted
+                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                    : 'bg-emerald-600/60 hover:bg-emerald-600 shadow-none'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>نعم - تمت الموافقة وتوقيع العقد (إتمام البيع)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Printable Draft Contract Viewer */}
+    {showDraftPrintModal && (
+      <ContractPrint
+        plan={draftPlan}
+        settings={settings}
+        onClose={() => setShowDraftPrintModal(false)}
+      />
     )}
   </div>
   );

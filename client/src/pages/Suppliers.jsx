@@ -17,7 +17,9 @@ import {
   Download,
   Upload,
   Info,
-  CheckCircle
+  CheckCircle,
+  DollarSign,
+  Wallet
 } from 'lucide-react';
 import { api } from '../api';
 import { exportToExcel, readExcelFile, downloadSuppliersTemplate } from '../utils/excel';
@@ -28,6 +30,14 @@ export default function Suppliers({ settings }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
+
+  // Supplier Payment Modal (Requirement 6)
+  const [paySupplierModal, setPaySupplierModal] = useState(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payType, setPayType] = useState('partial'); // 'partial' or 'full'
+  const [payMethod, setPayMethod] = useState('cash'); // 'cash' or 'bank'
+  const [payNotes, setPayNotes] = useState('');
+  const [isSubmittingPay, setIsSubmittingPay] = useState(false);
 
   // Excel Import/Export State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -61,6 +71,50 @@ export default function Suppliers({ settings }) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenPayModal = (s) => {
+    setPaySupplierModal(s);
+    setPayType('partial');
+    setPayAmount('');
+    setPayMethod('cash');
+    setPayNotes('');
+  };
+
+  const handlePayTypeChange = (type) => {
+    setPayType(type);
+    if (type === 'full') {
+      setPayAmount(Math.max(0, Number(paySupplierModal?.balance || 0)));
+    } else {
+      setPayAmount('');
+    }
+  };
+
+  const handleConfirmSupplierPayment = async (e) => {
+    e.preventDefault();
+    if (!paySupplierModal) return;
+    const amountVal = Number(payAmount);
+    if (!amountVal || amountVal <= 0) {
+      alert('الرجاء إدخال مبلغ سداد صحيح أكبر من الصفر');
+      return;
+    }
+
+    setIsSubmittingPay(true);
+    try {
+      await api.paySupplier(paySupplierModal.id, {
+        amount: amountVal,
+        payment_type: payType,
+        payment_method: payMethod,
+        notes: payNotes || (payType === 'full' ? 'سداد كامل المديونية' : 'دفعة من تحت الحساب')
+      });
+      alert('تم تسجيل سداد المورد بنجاح وتحديث الرصيد والخزينة!');
+      setPaySupplierModal(null);
+      loadSuppliers();
+    } catch (err) {
+      alert(err.message || 'خطأ أثناء تسجيل سداد المورد');
+    } finally {
+      setIsSubmittingPay(false);
     }
   };
 
@@ -290,6 +344,15 @@ export default function Suppliers({ settings }) {
               </div>
 
               <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleOpenPayModal(s)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold transition cursor-pointer"
+                  title="سداد دفعة من تحت الحساب أو كامل المديونية"
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>سداد</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setEditingSupplier({ ...s })}
@@ -712,6 +775,132 @@ export default function Suppliers({ settings }) {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Supplier Payment Modal (Requirement 6) */}
+      {paySupplierModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-xs text-slate-800">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">
+                    سداد حساب المورد: {paySupplierModal.name}
+                  </h3>
+                  {paySupplierModal.company && (
+                    <p className="text-[11px] text-blue-600 font-semibold">{paySupplierModal.company}</p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setPaySupplierModal(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Balance Display */}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 mb-4 flex items-center justify-between">
+              <span className="font-bold text-slate-600">رصيد المديونية المستحق للمورد:</span>
+              <span className="font-black text-rose-700 text-sm" dir="ltr">
+                {Number(paySupplierModal.balance || 0).toLocaleString()} {currency}
+              </span>
+            </div>
+
+            <form onSubmit={handleConfirmSupplierPayment} className="space-y-3.5">
+              {/* Payment Type Selection */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1.5">نوع السداد المطلوب:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePayTypeChange('partial')}
+                    className={`py-2 px-3 rounded-xl font-bold border transition-all cursor-pointer text-center ${
+                      payType === 'partial'
+                        ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    دفعة من تحت الحساب
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePayTypeChange('full')}
+                    className={`py-2 px-3 rounded-xl font-bold border transition-all cursor-pointer text-center ${
+                      payType === 'full'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    سداد كامل المديونية
+                  </button>
+                </div>
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">المبلغ المراد سداده ({currency}) *</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="any"
+                  placeholder="0.00"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 rounded-xl px-3 py-2 font-mono font-black text-sm text-left focus:outline-none"
+                  dir="ltr"
+                />
+              </div>
+
+              {/* Payment Method */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">طريقة السداد / قناة الدفع:</label>
+                <select
+                  value={payMethod}
+                  onChange={(e) => setPayMethod(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
+                >
+                  <option value="cash">خزينة المعرض النقدية (صرف كاش)</option>
+                  <option value="bank">تحويل بنكي / شيك مسحوب على حساب المعرض</option>
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">البيان / رقم الإيصال / ملاحظات:</label>
+                <input
+                  type="text"
+                  placeholder="مثال: دفعة شيك رقم 4589 أو إيصال استلام نقدية"
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setPaySupplierModal(null)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPay}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black cursor-pointer shadow-md transition-all active:scale-98"
+                >
+                  {isSubmittingPay ? 'جاري التسجيل...' : 'تأكيد السداد وصرف المبلغ'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

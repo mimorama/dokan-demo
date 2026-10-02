@@ -532,6 +532,143 @@ function initDb() {
   try { db.exec("ALTER TABLE settings ADD COLUMN max_cashier_discount_amount REAL DEFAULT 500.0"); } catch (_) {}
   try { db.exec("ALTER TABLE settings ADD COLUMN manager_override_pin TEXT DEFAULT '1234'"); } catch (_) {}
 
+  // Safe migrations for Customer Balance & Transactions
+  try { db.exec("ALTER TABLE customers ADD COLUMN balance REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN collection_fee REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN paid_by_customer_credit REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE finance_companies ADD COLUMN company_type TEXT DEFAULT 'finance_company'"); } catch (_) {}
+
+  // Auto-categorize banks vs finance companies
+  try {
+    db.prepare(`
+      UPDATE finance_companies 
+      SET company_type = 'bank' 
+      WHERE name LIKE '%بنك%' OR name LIKE '%CIB%' OR name LIKE '%الأهلي%'
+    `).run();
+    db.prepare(`
+      UPDATE finance_companies 
+      SET company_type = 'finance_company' 
+      WHERE company_type IS NULL OR company_type = ''
+    `).run();
+  } catch (_) {}
+
+  // Customer Balance Transactions
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      type TEXT NOT NULL, -- 'credit_deposit', 'credit_payment', 'manual_adjust'
+      amount REAL NOT NULL,
+      description TEXT,
+      ref_type TEXT,
+      ref_id INTEGER,
+      balance_after REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+      amount REAL NOT NULL,
+      payment_type TEXT DEFAULT 'partial', -- 'full', 'partial'
+      payment_method TEXT DEFAULT 'cash', -- 'cash', 'bank'
+      bank_account_id INTEGER REFERENCES bank_accounts(id),
+      receipt_no TEXT,
+      notes TEXT,
+      payment_date DATE DEFAULT (DATE('now')),
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 5. COMPLETE ACCOUNTING SYSTEM TABLES (النظام المحاسبي المتكامل)
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL, -- 'asset', 'liability', 'equity', 'revenue', 'expense'
+      parent_id INTEGER REFERENCES accounts(id),
+      is_leaf INTEGER DEFAULT 1,
+      balance REAL DEFAULT 0,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS journal_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_no TEXT NOT NULL UNIQUE,
+      entry_date DATE DEFAULT (DATE('now')),
+      ref_type TEXT, -- 'sale', 'purchase', 'expense', 'supplier_payment', 'installment', 'return', 'collection_fee', 'manual'
+      ref_id INTEGER,
+      description TEXT NOT NULL,
+      created_by TEXT,
+      status TEXT DEFAULT 'posted',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS journal_entry_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+      account_id INTEGER NOT NULL REFERENCES accounts(id),
+      debit REAL DEFAULT 0,
+      credit REAL DEFAULT 0,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Seed Default Chart of Accounts if empty
+  const coaCount = db.prepare('SELECT COUNT(*) as count FROM accounts').get().count;
+  if (coaCount === 0) {
+    const insertAccount = db.prepare(`
+      INSERT INTO accounts (id, code, name, type, parent_id, is_leaf, description)
+      VALUES (@id, @code, @name, @type, @parent_id, @is_leaf, @description)
+    `);
+
+    [
+      // 1. الأصول (Assets)
+      { id: 1, code: '1000', name: 'الأصول', type: 'asset', parent_id: null, is_leaf: 0, description: 'كافة أصول وممتلكات المعرض' },
+      { id: 2, code: '1100', name: 'الأصول المتداولة', type: 'asset', parent_id: 1, is_leaf: 0, description: 'النقدية والمخزون والمدينون' },
+      { id: 3, code: '1101', name: 'الخزينة النقدية الرئيسية', type: 'asset', parent_id: 2, is_leaf: 1, description: 'النقدية السائلة بالدرج والخزينة' },
+      { id: 4, code: '1102', name: 'الحسابات البنكية', type: 'asset', parent_id: 2, is_leaf: 1, description: 'حسابات المعرض في البنوك (الأهلي، CIB...)' },
+      { id: 5, code: '1103', name: 'المحافظ الإلكترونية وإنستاباي', type: 'asset', parent_id: 2, is_leaf: 1, description: 'حسابات فودافون كاش وإنستاباي' },
+      { id: 6, code: '1104', name: 'مستحقات شركات التمويل (فاليو/كونتاكت)', type: 'asset', parent_id: 2, is_leaf: 1, description: 'مستحقات معلقة لدى شركات التمويل' },
+      { id: 7, code: '1105', name: 'العملاء ومدينو التقسيط (أوراق القبض)', type: 'asset', parent_id: 2, is_leaf: 1, description: 'مستحقات الأقساط وإيصالات الأمانة لدى العملاء' },
+      { id: 8, code: '1106', name: 'المخزون السلعي (الأجهزة بالمعرض)', type: 'asset', parent_id: 2, is_leaf: 1, description: 'قيمة بضاعة الأجهزة المتاحة بالمستودعات' },
+      { id: 9, code: '1200', name: 'الأصول الثابتة', type: 'asset', parent_id: 1, is_leaf: 0, description: 'أثاث، تجهيزات، أجهزة حاسوب وتكييفات المعرض' },
+      { id: 10, code: '1201', name: 'تجهيزات وديكورات المعرض', type: 'asset', parent_id: 9, is_leaf: 1, description: 'الأصول الثابتة والتجهيزات' },
+
+      // 2. الخصوم والالتزامات (Liabilities)
+      { id: 11, code: '2000', name: 'الخصوم والالتزامات', type: 'liability', parent_id: null, is_leaf: 0, description: 'مستحقات الغير على المعرض' },
+      { id: 12, code: '2100', name: 'الالتزامات المتداولة', type: 'liability', parent_id: 11, is_leaf: 0, description: 'ديون الموردين وأرصدة العملاء' },
+      { id: 13, code: '2101', name: 'الموردون والشركات الموزعة', type: 'liability', parent_id: 12, is_leaf: 1, description: 'حسابات موردي الأجهزة وشركات التوزيع (العربي، راية...)' },
+      { id: 14, code: '2102', name: 'أرصدة العملاء الدائنة (أمانات ومرتجعات)', type: 'liability', parent_id: 12, is_leaf: 1, description: 'أرصدة دائنة للعملاء من مرتجعات مبيعات سابقة' },
+      { id: 15, code: '2103', name: 'ضرائب ومستحقات حكومية', type: 'liability', parent_id: 12, is_leaf: 1, description: 'ضريبة القيمة المضافة والأرباح التجارية' },
+
+      // 3. حقوق الملكية (Equity)
+      { id: 16, code: '3000', name: 'حقوق الملكية', type: 'equity', parent_id: null, is_leaf: 0, description: 'رأس المال وصافي حقوق أصحاب المعرض' },
+      { id: 17, code: '3101', name: 'رأس مال المعرض', type: 'equity', parent_id: 16, is_leaf: 1, description: 'رأس المال المستثمر' },
+      { id: 18, code: '3102', name: 'الأرباح المبقاة والمرحلة', type: 'equity', parent_id: 16, is_leaf: 1, description: 'أرباح السنوات والفترات السابقة' },
+      { id: 19, code: '3103', name: 'جاري صاحب المعرض / الشركاء', type: 'equity', parent_id: 16, is_leaf: 1, description: 'المسحوبات والإيداعات الشخصية' },
+
+      // 4. الإيرادات (Revenue)
+      { id: 20, code: '4000', name: 'الإيرادات', type: 'revenue', parent_id: null, is_leaf: 0, description: 'مبيعات الأجهزة وإيرادات النشاط' },
+      { id: 21, code: '4101', name: 'إيرادات مبيعات الأجهزة', type: 'revenue', parent_id: 20, is_leaf: 1, description: 'مبيعات الأجهزة كاش وبنوك وتقسيط' },
+      { id: 22, code: '4102', name: 'أرباح وفوائد التقسيط المباشر', type: 'revenue', parent_id: 20, is_leaf: 1, description: 'فروق فوائد وأرباح عقود التقسيط' },
+      { id: 23, code: '4103', name: 'إيرادات خدمات وتوصيل ونقل', type: 'revenue', parent_id: 20, is_leaf: 1, description: 'مصاريف نقل وشحن محصلة' },
+
+      // 5. المصروفات (Expenses)
+      { id: 24, code: '5000', name: 'المصروفات والتكاليف', type: 'expense', parent_id: null, is_leaf: 0, description: 'تكلفة البضاعة والمصاريف التشغيلية' },
+      { id: 25, code: '5101', name: 'تكلفة البضاعة المباعة (COGS)', type: 'expense', parent_id: 24, is_leaf: 1, description: 'تكلفة شراء الأجهزة المباعة' },
+      { id: 26, code: '5102', name: 'رسوم ومصروفات التحصيل الإلكتروني والبنكي', type: 'expense', parent_id: 24, is_leaf: 1, description: 'رسوم الفيزا (2%) وإنستاباي والمحافظ الإلكترونية' },
+      { id: 27, code: '5103', name: 'عمولات شركات التمويل الاستهلاكي', type: 'expense', parent_id: 24, is_leaf: 1, description: 'عمولة التاجر لشركات فاليو وكونتاكت وأمان' },
+      { id: 28, code: '5104', name: 'إيجار المعرض والمخازن', type: 'expense', parent_id: 24, is_leaf: 1, description: 'إيجارات الفروع والمستودعات' },
+      { id: 29, code: '5105', name: 'المرتبات والأجور', type: 'expense', parent_id: 24, is_leaf: 1, description: 'رواتب الموظفين والمبيعات' },
+      { id: 30, code: '5106', name: 'المصروفات العمومية والتشغيلية', type: 'expense', parent_id: 24, is_leaf: 1, description: 'كهرباء، ماء، إنترنت، بوفيه، ونثريات' },
+      { id: 31, code: '5107', name: 'مرتجعات ومسموحات المبيعات', type: 'expense', parent_id: 24, is_leaf: 1, description: 'مبالغ الأجهزة المرتجعة' }
+    ].forEach(acc => insertAccount.run(acc));
+  }
+
   // Seed default users if empty
   const usersCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
   if (usersCount === 0) {

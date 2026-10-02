@@ -18,7 +18,8 @@ import {
   LogOut,
   User,
   Receipt,
-  Coins
+  Coins,
+  BookOpen
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -39,6 +40,7 @@ export default function Sidebar({
     { id: 'pos', label: 'نقطة البيع (فاتورة جديدة)', icon: ShoppingCart, highlight: true },
     { id: 'sales', label: 'فواتير البيع والمراجعة', icon: Receipt },
     { id: 'reconciliation', label: 'مراجعة اليومية وطرق الدفع', icon: Coins },
+    { id: 'accounting', label: 'النظام المحاسبي العام', icon: BookOpen },
     { id: 'purchases', label: 'المشتريات وتدقيق الفواتير', icon: ShoppingBag, purchasesHighlight: true },
     { id: 'products', label: 'الأجهزة والمخزون', icon: Package },
     { id: 'branches', label: 'الفروع والمخازن', icon: Building2 },
@@ -59,11 +61,11 @@ export default function Sidebar({
 
   // Role permissions
   const rolePermissions = {
-    admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
-    manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
+    admin: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users', 'settings'],
+    manager: ['dashboard', 'pos', 'sales', 'reconciliation', 'accounting', 'purchases', 'products', 'branches', 'serials', 'installments', 'customers', 'cashbox', 'suppliers', 'reports', 'users'],
     cashier: ['pos', 'sales', 'reconciliation', 'customers', 'serials', 'installments'],
     storekeeper: ['products', 'branches', 'purchases', 'serials', 'suppliers'],
-    accountant: ['dashboard', 'sales', 'reconciliation', 'purchases', 'cashbox', 'customers', 'suppliers', 'reports']
+    accountant: ['dashboard', 'sales', 'reconciliation', 'accounting', 'purchases', 'cashbox', 'customers', 'suppliers', 'reports']
   };
 
   const allowedTabs = rolePermissions[currentUser?.role || 'admin'] || rolePermissions.admin;
