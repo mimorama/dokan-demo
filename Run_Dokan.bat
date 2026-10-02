@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 > nul
-title Dokan Appliances POS & Installments System - Release v3.1.0
+title Dokan Appliances POS & Installments System - Release v3.2.0
 color 0b
 
 echo ================================================================
 echo           Dokan Appliances Management & POS System
-echo             Local Server & Offline Release v3.1.0
+echo             Local Server & Offline Release v3.2.0
 echo ================================================================
 echo.
 
