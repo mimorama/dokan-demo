@@ -679,36 +679,59 @@ export default function POS({ onSaleCompleted, settings, currentUser }) {
     }
   };
 
+  const countNum = Number(installmentsCount) || 12;
+  const generatedDraftPayments = Array.from({ length: countNum }).map((_, idx) => {
+    const start = startDate ? new Date(startDate) : new Date();
+    const dueDate = new Date(start);
+    dueDate.setMonth(dueDate.getMonth() + idx);
+    const y = dueDate.getFullYear();
+    const m = String(dueDate.getMonth() + 1).padStart(2, '0');
+    const d = String(dueDate.getDate()).padStart(2, '0');
+    const amount = (idx === countNum - 1) 
+      ? Math.max(0, totalInstallmentAmount - (monthlyAmount * (countNum - 1))) 
+      : monthlyAmount;
+    return {
+      id: `draft-${idx + 1}`,
+      installment_no: idx + 1,
+      due_date: `${y}-${m}-${d}`,
+      amount_due: amount,
+      status: 'pending'
+    };
+  });
+
   const draftPlan = {
     id: 'DRAFT',
     invoice_no: 'مسودة عقد تقسيط مباشر',
     sale_date: new Date().toISOString().slice(0, 10),
-    start_date: startDate,
-    customer_name: customerName,
-    customer_national_id: customerNationalId,
-    customer_phone: customerPhone,
-    customer_address: customerAddress,
+    start_date: startDate || new Date().toISOString().slice(0, 10),
+    customer_name: customerName || 'عميل تقسيط',
+    customer_national_id: customerNationalId || '',
+    customer_phone: customerPhone || '',
+    customer_address: customerAddress || '',
     customer_workplace: selectedCustomerObj?.workplace || '',
-    guarantor_name: guarantorName,
-    guarantor_phone: guarantorPhone,
-    guarantor_national_id: guarantorNationalId,
-    guarantor_relation: guarantorRelation,
+    guarantor_name: guarantorName || '',
+    guarantor_phone: guarantorPhone || '',
+    guarantor_national_id: guarantorNationalId || '',
+    guarantor_relation: guarantorRelation || 'ضامن',
     items: cart.map(i => ({
-      name: i.product.name,
-      model: i.product.model_number,
-      serial_number: i.serial_number,
+      name: i.product?.name || i.name,
+      product_name: i.product?.name || i.name,
+      model: i.product?.model_number || i.model,
+      model_number: i.product?.model_number || i.model,
+      serial_number: i.serial_number || '',
       unit_price: i.unit_price,
-      warranty_months: i.product.warranty_months || 12,
-      warranty_agency: i.product.warranty_agency || 'الوكيل الرسمي'
+      warranty_months: i.product?.warranty_months || 12,
+      warranty_agency: i.product?.warranty_agency || 'الوكيل الرسمي'
     })),
+    payments: generatedDraftPayments,
     total_cash_price: total,
     down_payment: downPaymentVal,
     financed_amount: financedAmount,
-    profit_rate: Number(profitRate),
+    profit_rate: Number(profitRate) || 0,
     profit_amount: profitAmount,
     total_installment_amount: totalInstallmentAmount,
     total_amount: totalInstallmentAmount,
-    installments_count: Number(installmentsCount),
+    installments_count: countNum,
     monthly_amount: monthlyAmount,
     remaining_balance: totalInstallmentAmount
   };
